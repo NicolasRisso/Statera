@@ -60,19 +60,26 @@ The engine is a library. `app/`, `automation/` and the CLI are its clients, and 
 - [ ] Fuzzing for all readers
 
 ### Phase 2: syntax and transformations
-- [ ] Lexer: SPSS tokenization rules (`.` terminators, continuation lines, quoted strings, `TO` lists, abbreviation to 3+ chars)
+- [x] Lexer: interactive-mode tokenization (`.` terminators, quoted strings, comments, operators)
+- [ ] Lexer: batch mode / continuation lines
 - [ ] Grammar-table-driven parser, written by us from the public Command Syntax Reference
 - [ ] Error/warning messages with SPSS-compatible numbering
-- [ ] Expression VM: arithmetic/logical/relational semantics with SYSMIS propagation, all functions (numeric, string, date/time, statistical, missing-value)
-- [ ] Data commands: `DATA LIST`, `BEGIN DATA`, `GET`, `SAVE`, `COMPUTE`, `RECODE`, `IF`, `DO IF`, `LOOP`, `VECTOR`, `COUNT`, `SELECT IF`, `FILTER`, `TEMPORARY`, `SORT CASES`, `SPLIT FILE`, `WEIGHT`, `AGGREGATE`, `MATCH FILES`, `ADD FILES`, labels, missing values, formats
+- [x] Expressions: arithmetic/logical/relational with SPSS missing semantics; numeric, statistical and missing-value functions (golden: compute_basic)
+- [ ] Expressions: string, date/time and distribution functions
+- [x] `GET`, `SAVE`, `COMPUTE`, `EXECUTE`
+- [ ] Procedure context (pass iterator with TEMPORARY/FILTER/SELECT IF/split, weights): see specs/architecture.md
+- [ ] Data commands: `DATA LIST`, `BEGIN DATA`, `RECODE`, `IF`, `DO IF`, `LOOP`, `VECTOR`, `COUNT`, `SELECT IF`, `FILTER`, `TEMPORARY`, `SORT CASES`, `SPLIT FILE`, `WEIGHT`, `AGGREGATE`, `MATCH FILES`, `ADD FILES`, labels, missing values, formats
 
 ### Phase 3: output
-- [ ] Pivot-table model: dimensions, categories, cells, footnotes, captions, layers
-- [ ] Number/date formatting identical to SPSS display rules
+- [x] Pivot-table model as flat cells with row/column paths and footnotes (matches OMS structure)
+- [ ] Layers, captions, corner text
+- [x] Number display rules for DESCRIPTIVES/FREQUENCIES statistics (specs/output/number-display.md)
+- [ ] Date/time formats, E notation, wide formats
 - [ ] Exporters: OMS-compatible XML (lets us compare against golden tests directly), HTML, CSV, XLSX, PDF; `.spv` later
 
 ### Phase 4: first procedures (most-used first)
-`FREQUENCIES`, `DESCRIPTIVES`, `CROSSTABS` (+ chi-square, measures), `MEANS`, `T-TEST`, `ONEWAY`, `CORRELATIONS`, `NONPAR CORR`, `REGRESSION`, `EXAMINE`, `NPAR TESTS`, `RELIABILITY`, `FACTOR`
+Done (golden-verified): `FREQUENCIES` (counts + all statistics), `DESCRIPTIVES` (all statistics).
+Next: `CROSSTABS` (+ chi-square, measures), `MEANS`, `T-TEST`, `ONEWAY`, `CORRELATIONS`, `NONPAR CORR`, `REGRESSION`, `EXAMINE`, `NPAR TESTS`, `RELIABILITY`, `FACTOR`
 
 ### Phase 5: UI MVP
 - [x] App shell: SDL3 + OpenGL3 + ImGui docking, DPI-aware fonts (Inter, JetBrains Mono)
