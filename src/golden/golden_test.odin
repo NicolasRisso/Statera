@@ -27,16 +27,17 @@ ROOT :: #directory + "/../.."
 @(test) test_ctx_split :: proc(t: ^testing.T) { run_case(t, "ctx_split") }
 
 Flat_Cell :: struct {
-	row, col:  string, // paths joined with " / "
-	text:      string,
-	number:    f64,
-	has_value: bool,
-	footnotes: string,
+	row, col, layer: string, // paths joined with " / "
+	text:            string,
+	number:          f64,
+	has_value:       bool,
+	footnotes:       string,
 }
 
 Flat_Table :: struct {
 	subtype, title: string,
 	captions:       string,
+	label_notes:    [dynamic]string, // "label: note" for footnotes on row/column labels
 	cells:          [dynamic]Flat_Cell,
 }
 
@@ -80,6 +81,9 @@ compare_tables :: proc(t: ^testing.T, ours, theirs: []Flat_Table) {
 		a, b := ours[i], theirs[i]
 		testing.expectf(t, a.subtype == b.subtype && a.title == b.title && a.captions == b.captions,
 			"table %d: ours %q/%q [%s], SPSS %q/%q [%s]", i, a.subtype, a.title, a.captions, b.subtype, b.title, b.captions)
+		an := strings.join(a.label_notes[:], "; ", context.temp_allocator)
+		bn := strings.join(b.label_notes[:], "; ", context.temp_allocator)
+		testing.expectf(t, an == bn, "table %d (%s) label notes: ours %q, SPSS %q", i, b.title, an, bn)
 		mismatches := 0
 		for j in 0 ..< max(len(a.cells), len(b.cells)) {
 			if j >= len(a.cells) || j >= len(b.cells) {
@@ -87,13 +91,13 @@ compare_tables :: proc(t: ^testing.T, ours, theirs: []Flat_Table) {
 				break
 			}
 			x, y := a.cells[j], b.cells[j]
-			same := x.row == y.row && x.col == y.col && x.text == y.text && x.footnotes == y.footnotes &&
+			same := x.row == y.row && x.col == y.col && x.layer == y.layer && x.text == y.text && x.footnotes == y.footnotes &&
 				x.has_value == y.has_value && (!y.has_value || close_enough(x.number, y.number))
 			if !same {
 				mismatches += 1
 				if mismatches <= 5 {
-					testing.expectf(t, false, "table %d (%s) cell %d:\n  ours: [%s | %s] %q %v %q\n  SPSS: [%s | %s] %q %v %q",
-						i, b.title, j, x.row, x.col, x.text, x.number, x.footnotes, y.row, y.col, y.text, y.number, y.footnotes)
+					testing.expectf(t, false, "table %d (%s) cell %d:\n  ours: [%s | %s | %s] %q %v %q\n  SPSS: [%s | %s | %s] %q %v %q",
+						i, b.title, j, x.layer, x.row, x.col, x.text, x.number, x.footnotes, y.layer, y.row, y.col, y.text, y.number, y.footnotes)
 				}
 			}
 		}
@@ -119,10 +123,15 @@ flatten_ours :: proc(items: []output.Item) -> [dynamic]Flat_Table {
 			captions = strings.join(table.captions, "; ", context.temp_allocator),
 		}
 		ft.cells = make([dynamic]Flat_Cell, context.temp_allocator)
+		ft.label_notes = make([dynamic]string, context.temp_allocator)
+		for n in table.label_notes {
+			append(&ft.label_notes, strings.concatenate({n.label, ": ", n.text}, context.temp_allocator))
+		}
 		for c in table.cells {
 			append(&ft.cells, Flat_Cell {
 				row       = strings.join(c.row, " / ", context.temp_allocator),
 				col       = strings.join(c.col, " / ", context.temp_allocator),
+				layer     = strings.join(c.layer, " / ", context.temp_allocator),
 				text      = c.text,
 				number    = c.number,
 				has_value = c.has_value,
@@ -134,8 +143,7 @@ flatten_ours :: proc(items: []output.Item) -> [dynamic]Flat_Table {
 	return out
 }
 
-// Flattens OMS XML pivot tables into cells with row/column paths. Hidden groups are skipped,
-// and layer labels are folded into the column path (we don't model layers yet).
+// Flattens OMS XML pivot tables into cells with layer/row/column paths. Hidden groups are skipped.
 flatten_oms :: proc(path: string) -> (tables: [dynamic]Flat_Table, ok: bool) {
 	doc, err := xml.load_from_file(path, {flags = {.Ignore_Unsupported, .Decode_SGML_Entities}}, allocator = context.temp_allocator)
 	if err != nil { return }
@@ -154,7 +162,7 @@ attr :: proc(e: ^xml.Element, key: string) -> string {
 
 @(private)
 Path :: struct {
-	row, col: [dynamic]string,
+	row, col, layer: [dynamic]string,
 }
 
 @(private)
@@ -172,6 +180,7 @@ walk_oms :: proc(doc: ^xml.Document, id: xml.Element_ID, tables: ^[dynamic]Flat_
 			subtype  = attr(e, "subType"),
 			title    = attr(e, "text"),
 			captions = strings.join(captions[:], "; ", context.temp_allocator),
+			label_notes = make([dynamic]string, context.temp_allocator),
 			cells    = make([dynamic]Flat_Cell, context.temp_allocator),
 		})
 		table = &tables[len(tables) - 1]
@@ -183,10 +192,27 @@ walk_oms :: proc(doc: ^xml.Document, id: xml.Element_ID, tables: ^[dynamic]Flat_
 			label := attr(e, "text")
 			row := make([dynamic]string, context.temp_allocator)
 			col := make([dynamic]string, context.temp_allocator)
+			layer := make([dynamic]string, context.temp_allocator)
 			append(&row, ..path.row[:])
 			append(&col, ..path.col[:])
-			if axis == "row" { append(&row, label) } else { append(&col, label) }
-			path = {row, col}
+			append(&layer, ..path.layer[:])
+			switch axis {
+			case "row":   append(&row, label)
+			case "layer": append(&layer, label)
+			case:         append(&col, label)
+			}
+			path = {row, col, layer}
+			if table != nil {
+				for v in e.value {
+					child, is_elem := v.(xml.Element_ID)
+					if !is_elem || doc.elements[child].ident != "footnote" { continue }
+					notes := make([dynamic]string, context.temp_allocator)
+					collect_notes(doc, child, &notes)
+					for n in notes {
+						append(&table.label_notes, strings.concatenate({label, ": ", n}, context.temp_allocator))
+					}
+				}
+			}
 		}
 	case "cell":
 		if table == nil { return }
@@ -197,6 +223,7 @@ walk_oms :: proc(doc: ^xml.Document, id: xml.Element_ID, tables: ^[dynamic]Flat_
 		append(&table.cells, Flat_Cell {
 			row       = strings.join(path.row[:], " / ", context.temp_allocator),
 			col       = strings.join(path.col[:], " / ", context.temp_allocator),
+			layer     = strings.join(path.layer[:], " / ", context.temp_allocator),
 			text      = attr(e, "text"),
 			number    = value,
 			has_value = has_value && number != "",
