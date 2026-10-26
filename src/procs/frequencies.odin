@@ -2,6 +2,8 @@
 package procs
 
 import "core:math"
+import "core:slice"
+import "core:strings"
 
 import "../io/sav"
 import "../output"
@@ -23,35 +25,51 @@ Freq_Options :: struct {
 	no_table: bool,
 }
 
-frequencies :: proc(file: ^sav.File, vars: []int, opts: Freq_Options, items: ^[dynamic]output.Item) {
-	append(items, statistics_table(file, vars, opts.stats))
+frequencies :: proc(ctx: ^Context, vars: []int, opts: Freq_Options, items: ^[dynamic]output.Item) {
+	if ctx.mode == .Separate {
+		for &g in ctx.groups {
+			append(items, output.Text{kind = .Heading, command = "Frequencies", text = strings.clone(g.caption)})
+			frequencies_groups(ctx, slice.from_ptr(&g, 1), false, vars, opts, items)
+		}
+		return
+	}
+	frequencies_groups(ctx, ctx.groups, true, vars, opts, items)
+}
+
+@(private)
+frequencies_groups :: proc(ctx: ^Context, groups: []Group, layered: bool, vars: []int, opts: Freq_Options, items: ^[dynamic]output.Item) {
+	caption := [1]string{groups[0].caption}
+	captions := caption[:] if !layered && groups[0].caption != "" else nil
+
+	stats := statistics_table(ctx, groups, layered, vars, opts.stats)
+	stats.captions = clone_strings(captions)
+	append(items, stats)
 	if opts.no_table { return }
-	append(items, output.Text{kind = .Heading, command = "Frequencies", text = "Frequency Table"})
+	if len(vars) > 1 {
+		append(items, output.Text{kind = .Heading, command = "Frequencies", text = "Frequency Table"})
+	}
 	for vi in vars {
-		append(items, frequency_table(file, &file.variables[vi]))
+		v := &ctx.file.variables[vi]
+		t := output.Table{command = "Frequencies", subtype = "Frequencies", title = strings.clone(var_title(v))}
+		t.captions = clone_strings(captions)
+		for &g in groups {
+			frequency_rows(&t, ctx, &g, g.labels if layered else nil, v)
+		}
+		append(items, t)
 	}
 }
 
 @(private)
-var_title :: proc(v: ^sav.Variable) -> string {
-	return v.label if v.label != "" else v.name
+clone_strings :: proc(s: []string) -> []string {
+	if len(s) == 0 { return nil }
+	out := make([]string, len(s))
+	for x, i in s { out[i] = strings.clone(x) }
+	return out
 }
 
 @(private)
-statistics_table :: proc(file: ^sav.File, vars: []int, stats: Freq_Stats) -> output.Table {
+statistics_table :: proc(ctx: ^Context, groups: []Group, layered: bool, vars: []int, stats: Freq_Stats) -> output.Table {
 	t := output.Table{command = "Frequencies", subtype = "Statistics", title = "Statistics"}
-	// Rows are emitted statistic-major so the cell order matches SPSS's table.
-	for vi in vars {
-		v := &file.variables[vi]
-		valid := f64(len(valid_values(file, v)))
-		output.add_number(&t, {"N", "Valid"}, {var_title(v)}, valid, output.NO_DECIMALS)
-	}
-	for vi in vars {
-		v := &file.variables[vi]
-		valid := f64(len(valid_values(file, v)))
-		output.add_number(&t, {"N", "Missing"}, {var_title(v)}, f64(file.n_cases) - valid, output.NO_DECIMALS)
-	}
-
 	order := [?]struct {
 		stat: Freq_Stat,
 		name: string,
@@ -61,36 +79,47 @@ statistics_table :: proc(file: ^sav.File, vars: []int, stats: Freq_Stats) -> out
 		{.Seskew, "Std. Error of Skewness"}, {.Kurtosis, "Kurtosis"}, {.Sekurt, "Std. Error of Kurtosis"},
 		{.Range, "Range"}, {.Min, "Minimum"}, {.Max, "Maximum"}, {.Sum, "Sum"},
 	}
-	for o in order {
-		if o.stat not_in stats { continue }
+	file := ctx.file
+	for &g in groups {
+		prefix := g.labels if layered else nil
+		total := total_weight(&g)
+		// Rows are emitted statistic-major so the cell order matches SPSS's table.
 		for vi in vars {
 			v := &file.variables[vi]
-			xs := valid_values(file, v)
-			s := summarize(xs)
-			d := int(v.print.decimals)
-			row, col := []string{o.name}, []string{var_title(v)}
-			switch o.stat {
-			case .Mean:     add_stat(&t, row, col, s.mean, d + 2)
-			case .Semean:   add_stat(&t, row, col, s.se_mean, d + 3)
-			case .Median:   add_stat(&t, row, col, percentile(sorted_copy(xs), 0.5), d + 2)
-			case .Stddev:   add_stat(&t, row, col, math.sqrt(s.variance), d + 3)
-			case .Variance: add_stat(&t, row, col, s.variance, 3)
-			case .Skewness: add_stat(&t, row, col, s.skewness, 3)
-			case .Seskew:   add_stat(&t, row, col, s.se_skew, 3)
-			case .Kurtosis: add_stat(&t, row, col, s.kurtosis, 3)
-			case .Sekurt:   add_stat(&t, row, col, s.se_kurt, 3)
-			case .Range:    add_stat(&t, row, col, s.max - s.min, d)
-			case .Min:      add_stat(&t, row, col, s.min, d)
-			case .Max:      add_stat(&t, row, col, s.max, d)
-			case .Sum:      add_stat(&t, row, col, s.sum, d)
-			case .Mode:
-				mode, multiple := find_mode(xs)
-				if math.is_nan(mode) {
-					output.add_text(&t, row, col, "")
-				} else if multiple {
-					output.add_number(&t, row, col, mode, d, {MULTIPLE_MODES})
-				} else {
-					output.add_number(&t, row, col, mode, d)
+			_, ws := valid_values(ctx, &g, v)
+			output.add_number(&t, path(prefix, "N", "Valid"), {var_title(v)}, sum(ws), output.NO_DECIMALS)
+		}
+		for vi in vars {
+			v := &file.variables[vi]
+			_, ws := valid_values(ctx, &g, v)
+			output.add_number(&t, path(prefix, "N", "Missing"), {var_title(v)}, total - sum(ws), output.NO_DECIMALS)
+		}
+		for o in order {
+			if o.stat not_in stats { continue }
+			for vi in vars {
+				v := &file.variables[vi]
+				xs, ws := valid_values(ctx, &g, v)
+				s := summarize(xs, ws)
+				d := int(v.print.decimals)
+				row, col := path(prefix, o.name), path(nil, var_title(v))
+				switch o.stat {
+				case .Mean:     add_stat(&t, row, col, s.mean, d + 2)
+				case .Semean:   add_stat(&t, row, col, s.se_mean, d + 3)
+				case .Median:   add_stat(&t, row, col, percentile(xs, ws, 0.5), d + 2)
+				case .Stddev:   add_stat(&t, row, col, math.sqrt(s.variance), d + 3)
+				case .Variance: add_stat(&t, row, col, s.variance, 3)
+				case .Skewness: add_stat(&t, row, col, s.skewness, 3)
+				case .Seskew:   add_stat(&t, row, col, s.se_skew, 3)
+				case .Kurtosis: add_stat(&t, row, col, s.kurtosis, 3)
+				case .Sekurt:   add_stat(&t, row, col, s.se_kurt, 3)
+				case .Range:    add_stat(&t, row, col, s.max - s.min, d)
+				case .Min:      add_stat(&t, row, col, s.min, d)
+				case .Max:      add_stat(&t, row, col, s.max, d)
+				case .Sum:      add_stat(&t, row, col, s.sum, d)
+				case .Mode:
+					mode, multiple := find_mode(xs, ws)
+					if math.is_nan(mode) { continue }
+					output.add_number(&t, row, col, mode, d, {MULTIPLE_MODES} if multiple else nil)
 				}
 			}
 		}
@@ -99,105 +128,89 @@ statistics_table :: proc(file: ^sav.File, vars: []int, stats: Freq_Stats) -> out
 }
 
 @(private)
-find_mode :: proc(xs: []f64) -> (mode: f64, multiple: bool) {
-	if len(xs) == 0 { return math.nan_f64(), false }
-	sorted := sorted_copy(xs)
-	best, best_count, ties := sorted[0], 0, false
-	for i := 0; i < len(sorted); {
-		j := i
-		for j < len(sorted) && sorted[j] == sorted[i] { j += 1 }
-		count := j - i
-		if count > best_count {
-			best, best_count, ties = sorted[i], count, false
-		} else if count == best_count {
-			ties = true
-		}
-		i = j
-	}
-	return best, ties
+sum :: proc(xs: []f64) -> f64 {
+	s := 0.0
+	for x in xs { s += x }
+	return s
 }
 
 @(private)
-Value_Count :: struct {
-	value: f64,
-	count: int,
-}
-
-@(private)
-count_values :: proc(values: []f64) -> []Value_Count {
-	sorted := sorted_copy(values)
-	out := make([dynamic]Value_Count, context.temp_allocator)
-	for x in sorted {
-		if len(out) > 0 && out[len(out) - 1].value == x {
-			out[len(out) - 1].count += 1
-		} else {
-			append(&out, Value_Count{x, 1})
+find_mode :: proc(xs, ws: []f64) -> (mode: f64, multiple: bool) {
+	counts := count_values(xs, ws)
+	if len(counts) == 0 { return math.nan_f64(), false }
+	best := counts[0]
+	for c in counts[1:] {
+		if c.w > best.w {
+			best, multiple = c, false
+		} else if c.w == best.w {
+			multiple = true
 		}
 	}
-	return out[:]
+	return best.x, multiple
 }
 
 @(private)
-value_text :: proc(v: ^sav.Variable, x: f64) -> string {
-	for l in v.value_labels {
-		if l.value == x { return l.label }
-	}
-	return output.format_number(x, int(v.print.decimals), context.temp_allocator)
-}
+frequency_rows :: proc(t: ^output.Table, ctx: ^Context, g: ^Group, prefix: []string, v: ^sav.Variable) {
+	file := ctx.file
+	total := total_weight(g)
 
-@(private)
-frequency_table :: proc(file: ^sav.File, v: ^sav.Variable) -> output.Table {
-	t := output.Table{command = "Frequencies", subtype = "Frequencies", title = var_title(v)}
-	total := f64(file.n_cases)
-
-	valid := make([dynamic]f64, context.temp_allocator)
-	user_missing := make([dynamic]f64, context.temp_allocator)
-	sysmis := 0
-	for x in v.numbers {
+	valid_x := make([dynamic]f64, context.temp_allocator)
+	valid_w := make([dynamic]f64, context.temp_allocator)
+	miss_x := make([dynamic]f64, context.temp_allocator)
+	miss_w := make([dynamic]f64, context.temp_allocator)
+	sysmis := 0.0
+	for row, i in g.rows {
+		x, w := v.numbers[row], g.weights[i]
 		switch {
-		case x == file.sysmis:                         sysmis += 1
-		case transform.is_missing(v, x, file.sysmis): append(&user_missing, x)
-		case:                                          append(&valid, x)
+		case x == file.sysmis:
+			sysmis += w
+		case transform.is_missing(v, x, file.sysmis):
+			append(&miss_x, x)
+			append(&miss_w, w)
+		case:
+			append(&valid_x, x)
+			append(&valid_w, w)
 		}
 	}
-	n_valid := f64(len(valid))
+	n_valid := sum(valid_w[:])
 
 	cumulative := 0.0
-	for vc in count_values(valid[:]) {
-		row := []string{"Valid", value_text(v, vc.value)}
-		pct := 100 * f64(vc.count) / total
-		valid_pct := 100 * f64(vc.count) / n_valid
+	for vc in count_values(valid_x[:], valid_w[:]) {
+		row := path(prefix, "Valid", value_text(v, vc.x))
+		valid_pct := 100 * vc.w / n_valid
 		cumulative += valid_pct
-		output.add_number(&t, row, {"Frequency"}, f64(vc.count), output.NO_DECIMALS)
-		output.add_number(&t, row, {"Percent"}, pct, 1)
-		output.add_number(&t, row, {"Valid Percent"}, valid_pct, 1)
-		output.add_number(&t, row, {"Cumulative Percent"}, cumulative, 1)
+		output.add_number(t, row, {"Frequency"}, vc.w, output.NO_DECIMALS)
+		output.add_number(t, row, {"Percent"}, 100 * vc.w / total, 1)
+		output.add_number(t, row, {"Valid Percent"}, valid_pct, 1)
+		output.add_number(t, row, {"Cumulative Percent"}, cumulative, 1)
 	}
-	if len(valid) > 0 {
-		output.add_number(&t, {"Valid", "Total"}, {"Frequency"}, n_valid, output.NO_DECIMALS)
-		output.add_number(&t, {"Valid", "Total"}, {"Percent"}, 100 * n_valid / total, 1)
-		output.add_number(&t, {"Valid", "Total"}, {"Valid Percent"}, 100, 1)
+	if n_valid > 0 {
+		row := path(prefix, "Valid", "Total")
+		output.add_number(t, row, {"Frequency"}, n_valid, output.NO_DECIMALS)
+		output.add_number(t, row, {"Percent"}, 100 * n_valid / total, 1)
+		output.add_number(t, row, {"Valid Percent"}, 100, 1)
 	}
 
-	n_missing := f64(len(user_missing) + sysmis)
-	if n_missing == 0 { return t }
+	n_missing := total - n_valid
+	if len(miss_x) == 0 && sysmis == 0 { return }
 	missing_rows := 0
-	for vc in count_values(user_missing[:]) {
-		row := []string{"Missing", value_text(v, vc.value)}
-		output.add_number(&t, row, {"Frequency"}, f64(vc.count), output.NO_DECIMALS)
-		output.add_number(&t, row, {"Percent"}, 100 * f64(vc.count) / total, 1)
+	for vc in count_values(miss_x[:], miss_w[:]) {
+		row := path(prefix, "Missing", value_text(v, vc.x))
+		output.add_number(t, row, {"Frequency"}, vc.w, output.NO_DECIMALS)
+		output.add_number(t, row, {"Percent"}, 100 * vc.w / total, 1)
 		missing_rows += 1
 	}
 	if sysmis > 0 {
-		output.add_number(&t, {"Missing", "System"}, {"Frequency"}, f64(sysmis), output.NO_DECIMALS)
-		output.add_number(&t, {"Missing", "System"}, {"Percent"}, 100 * f64(sysmis) / total, 1)
+		row := path(prefix, "Missing", "System")
+		output.add_number(t, row, {"Frequency"}, sysmis, output.NO_DECIMALS)
+		output.add_number(t, row, {"Percent"}, 100 * sysmis / total, 1)
 		missing_rows += 1
 	}
 	if missing_rows > 1 {
-		output.add_number(&t, {"Missing", "Total"}, {"Frequency"}, n_missing, output.NO_DECIMALS)
-		output.add_number(&t, {"Missing", "Total"}, {"Percent"}, 100 * n_missing / total, 1)
+		row := path(prefix, "Missing", "Total")
+		output.add_number(t, row, {"Frequency"}, n_missing, output.NO_DECIMALS)
+		output.add_number(t, row, {"Percent"}, 100 * n_missing / total, 1)
 	}
-	output.add_number(&t, {"Total"}, {"Frequency"}, total, output.NO_DECIMALS)
-	output.add_number(&t, {"Total"}, {"Percent"}, 100, 1)
-	return t
+	output.add_number(t, path(prefix, "Total"), {"Frequency"}, total, output.NO_DECIMALS)
+	output.add_number(t, path(prefix, "Total"), {"Percent"}, 100, 1)
 }

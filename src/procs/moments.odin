@@ -1,14 +1,11 @@
-// Shared summary statistics for DESCRIPTIVES / FREQUENCIES. Formulas: docs/specs/procs/descriptives.md
+// Shared summary statistics for DESCRIPTIVES / FREQUENCIES.
+// Formulas: docs/specs/procs/descriptives.md (weighted: n is replaced by W, see engine/procedure-context.md)
 package procs
 
 import "core:math"
-import "core:slice"
-
-import "../io/sav"
-import "../transform"
 
 Summary :: struct {
-	n:        f64,
+	n:        f64, // sum of weights
 	sum:      f64,
 	min, max: f64,
 	mean:     f64,
@@ -20,69 +17,71 @@ Summary :: struct {
 	se_kurt:  f64,
 }
 
-// Valid (non-missing) values of a numeric variable, in case order.
-valid_values :: proc(file: ^sav.File, v: ^sav.Variable, allocator := context.temp_allocator) -> []f64 {
-	out := make([dynamic]f64, 0, len(v.numbers), allocator)
-	for x in v.numbers {
-		if !transform.is_missing(v, x, file.sysmis) { append(&out, x) }
-	}
-	return out[:]
-}
-
-summarize :: proc(xs: []f64) -> Summary {
-	s := Summary{variance = math.nan_f64(), skewness = math.nan_f64(), kurtosis = math.nan_f64(),
-		se_mean = math.nan_f64(), se_skew = math.nan_f64(), se_kurt = math.nan_f64()}
-	n := f64(len(xs))
-	s.n = n
+summarize :: proc(xs, ws: []f64) -> Summary {
+	nan := math.nan_f64()
+	s := Summary{variance = nan, skewness = nan, kurtosis = nan, se_mean = nan, se_skew = nan, se_kurt = nan}
 	if len(xs) == 0 {
-		s.min, s.max, s.mean = math.nan_f64(), math.nan_f64(), math.nan_f64()
+		s.min, s.max, s.mean = nan, nan, nan
 		return s
 	}
 	s.min, s.max = xs[0], xs[0]
-	for x in xs {
-		s.sum += x
+	for x, i in xs {
+		s.n += ws[i]
+		s.sum += ws[i] * x
 		s.min = min(s.min, x)
 		s.max = max(s.max, x)
 	}
+	n := s.n
 	s.mean = s.sum / n
 
 	m2, m3, m4: f64
-	for x in xs {
+	for x, i in xs {
 		d := x - s.mean
-		m2 += d * d
-		m3 += d * d * d
-		m4 += d * d * d * d
+		w := ws[i]
+		m2 += w * d * d
+		m3 += w * d * d * d
+		m4 += w * d * d * d * d
 	}
-	if n >= 2 {
+	if n > 1 {
 		s.variance = m2 / (n - 1)
 		s.se_mean = math.sqrt(s.variance / n)
 	}
 	sd := math.sqrt(s.variance)
-	if n >= 3 && sd > 0 {
+	if n > 2 && sd > 0 {
 		s.skewness = n / ((n - 1) * (n - 2)) * m3 / (sd * sd * sd)
 		s.se_skew = math.sqrt(6 * n * (n - 1) / ((n - 2) * (n + 1) * (n + 3)))
 	}
-	if n >= 4 && sd > 0 {
+	if n > 3 && sd > 0 {
 		s.kurtosis = n * (n + 1) / ((n - 1) * (n - 2) * (n - 3)) * m4 / (sd * sd * sd * sd) - 3 * (n - 1) * (n - 1) / ((n - 2) * (n - 3))
 		s.se_kurt = math.sqrt(4 * (n * n - 1) * s.se_skew * s.se_skew / ((n - 3) * (n + 5)))
 	}
 	return s
 }
 
-// HAVERAGE percentile of sorted values. Spec: docs/specs/procs/frequencies.md
-percentile :: proc(sorted: []f64, p: f64) -> f64 {
-	n := len(sorted)
-	if n == 0 { return math.nan_f64() }
-	t := f64(n + 1) * p
-	k := int(math.floor(t))
-	f := t - f64(k)
-	if k < 1 { return sorted[0] }
-	if k >= n { return sorted[n - 1] }
-	return sorted[k - 1] + f * (sorted[k] - sorted[k - 1])
+// HAVERAGE percentile over values expanded by cumulative weight.
+// Spec: docs/specs/procs/frequencies.md, engine/procedure-context.md
+percentile :: proc(xs, ws: []f64, p: f64) -> f64 {
+	if len(xs) == 0 { return math.nan_f64() }
+	ps := sorted_pairs(xs, ws)
+	total := 0.0
+	for q in ps { total += q.w }
+	t := (total + 1) * p
+	k := math.floor(t)
+	f := t - k
+	if k < 1 { return ps[0].x }
+	if k >= total { return ps[len(ps) - 1].x }
+	a := value_at(ps, k)
+	b := value_at(ps, k + 1)
+	return a + f * (b - a)
 }
 
-sorted_copy :: proc(xs: []f64) -> []f64 {
-	out := slice.clone(xs, context.temp_allocator)
-	slice.sort(out)
-	return out
+// The value at 1-based position `pos` when each value is repeated by its weight.
+@(private)
+value_at :: proc(ps: []Weighted, pos: f64) -> f64 {
+	cum := 0.0
+	for q in ps {
+		cum += q.w
+		if cum >= pos { return q.x }
+	}
+	return ps[len(ps) - 1].x
 }
