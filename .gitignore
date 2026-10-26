@@ -13,6 +13,9 @@
 *.gpr
 *.rep/
 
+# Fetched and built by scripts/setup_imgui.ps1
+/vendor/imgui/
+
 # Editor / OS
 .vscode/
 .idea/
