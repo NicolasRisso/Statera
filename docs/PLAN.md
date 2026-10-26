@@ -54,7 +54,8 @@ The engine is a library. `app/`, `automation/` and the CLI are its clients, and 
 ### Phase 1: data I/O
 - [x] `.sav` reader: header, variables, labels, missing values, documents, measure, long names, encoding; none/bytecode/zlib compression
 - [ ] very long strings (subtype 14), long-string labels/missing (21/22), MR sets (7/19), attributes (17/18)
-- [ ] `.sav`/`.zsav` **writer**, byte-compatible with what SPSS writes (golden: SPSS reads our files back)
+- [x] `.sav` writer (uncompressed + bytecode), and SPSS 25 opens our files
+- [ ] `.zsav` writer; byte-identical output to SPSS where it matters
 - [ ] `.por` reader/writer, CSV/text (`GET DATA`/`DATA LIST`), xlsx
 - [ ] Fuzzing for all readers
 
@@ -74,12 +75,16 @@ The engine is a library. `app/`, `automation/` and the CLI are its clients, and 
 `FREQUENCIES`, `DESCRIPTIVES`, `CROSSTABS` (+ chi-square, measures), `MEANS`, `T-TEST`, `ONEWAY`, `CORRELATIONS`, `NONPAR CORR`, `REGRESSION`, `EXAMINE`, `NPAR TESTS`, `RELIABILITY`, `FACTOR`
 
 ### Phase 5: UI MVP
-- [ ] App shell: SDL3 + OpenGL3 + ImGui docking, theme system (dark/light/accent), DPI-aware fonts
-- [ ] Data View: virtualized grid with editing, value-label toggle, and variable-type-aware cell editors
-- [ ] Variable View: dictionary editor
+- [x] App shell: SDL3 + OpenGL3 + ImGui docking, DPI-aware fonts (Inter, JetBrains Mono)
+- [x] Themes: light, dark, follow-system (live), saved per user
+- [x] Data View: virtualized grid (250k demo cases), value-label toggle, user-missing/SYSMIS styling
+- [ ] Data View: cell editing and type-aware editors
+- [x] Variable View: dictionary display
+- [ ] Variable View: editing
 - [ ] Syntax editor: highlighting, grammar-aware autocomplete, error squiggles, run selection
 - [ ] Output viewer: outline + pivot tables, pivoting by drag, export
-- [ ] Command palette and dialogs for the Phase 4 procedures, with live syntax preview
+- [x] Command palette (`Ctrl+K`)
+- [ ] Dialogs for the Phase 4 procedures, with live syntax preview
 
 ### Phase 6: automation and AI
 - [ ] `openspss run file.sps` batch CLI
