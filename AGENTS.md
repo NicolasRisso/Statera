@@ -90,6 +90,7 @@ Sources: public docs §…, black-box run tests/golden/<case>, rea evidence (sum
 
 ## 4. UI rules (Dear ImGui)
 
+- Stack: Dear ImGui docking branch, Odin bindings generated with dear_bindings and vendored under `vendor/imgui`, SDL3 platform backend (`vendor:sdl3`), OpenGL 3 renderer. Don't add other UI toolkits.
 - The goal is **modern and good-looking**, not a copy of the legacy Swing UI. Keep SPSS's mental model (Data View, Variable View, Syntax, Output, dialogs), not its pixels.
 - Docking layout, dark and light themes from a central theme table (no hard-coded colors in widgets), high-DPI fonts, and generous spacing.
 - The UI never owns data. It renders engine state and issues commands.

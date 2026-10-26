@@ -56,6 +56,7 @@ openspss/
 └── tests/       # golden tests against reference output
 ```
 
+- **UI stack:** Dear ImGui (docking branch) via generated [dear_bindings](https://github.com/dearimgui/dear_bindings) for Odin, on SDL3 (`vendor:sdl3`) with the OpenGL 3 backend.
 - **Engine and UI are decoupled.** The UI is just one client of the engine. The CLI, the MCP server and the API go through the same command interface, so anything the UI can do, an agent can do too.
 - **Syntax is the source of truth.** As in SPSS, every dialog generates syntax, and the syntax is what runs. This gives you reproducibility for free.
 - **Columnar, cache-friendly data.** Numeric variables are `[]f64` columns and strings are arena-backed, so procedures stream over contiguous memory.
