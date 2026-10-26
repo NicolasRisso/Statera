@@ -4,8 +4,6 @@ package engine
 import "base:runtime"
 import "core:fmt"
 import "core:mem/virtual"
-import "core:os"
-import "core:path/filepath"
 import "core:strings"
 
 import "../io/sav"
@@ -14,18 +12,40 @@ import "../procs"
 import "../syntax"
 import "../transform"
 
+MAX_SPLIT :: 8
+
+// Per-dataset settings that procedures honour (the weight lives in sav.File.weight).
+Settings :: struct {
+	filter:     int, // variable index, -1 when off
+	split:      [MAX_SPLIT]int,
+	n_split:    int,
+	split_mode: procs.Split_Mode,
+}
+
 // Don't copy a Session: allocators inside its data point at its arenas.
 Session :: struct {
-	data_arena: ^virtual.Arena, // heap-allocated so the dataset's allocators keep a stable address
-	data:       sav.File,
-	data_name:  string,
-	has_data:   bool,
-	out_arena:  virtual.Arena,
-	items:      [dynamic]output.Item,
+	data_arena:    ^virtual.Arena, // heap-allocated so the dataset's allocators keep a stable address
+	data:          sav.File,
+	settings:      Settings,
+	data_name:     string,
+	has_data:      bool,
+
+	// TEMPORARY: a working copy used by the next procedure only.
+	temp_on:       bool,
+	temp_arena:    ^virtual.Arena,
+	temp_data:     sav.File,
+	temp_settings: Settings,
+
+	out_arena:     virtual.Arena,
+	items:         [dynamic]output.Item,
 }
 
 data_allocator :: proc(s: ^Session) -> runtime.Allocator {
 	return virtual.arena_allocator(s.data_arena)
+}
+
+out_allocator :: proc(s: ^Session) -> runtime.Allocator {
+	return virtual.arena_allocator(&s.out_arena)
 }
 
 // A fresh arena for building a dataset; hand it to set_dataset or free it with free_arena.
@@ -39,11 +59,8 @@ free_arena :: proc(a: ^virtual.Arena) {
 	free(a, runtime.heap_allocator())
 }
 
-out_allocator :: proc(s: ^Session) -> runtime.Allocator {
-	return virtual.arena_allocator(&s.out_arena)
-}
-
 destroy :: proc(s: ^Session) {
+	end_temporary(s)
 	free_arena(s.data_arena)
 	virtual.arena_destroy(&s.out_arena)
 	s^ = {}
@@ -51,9 +68,11 @@ destroy :: proc(s: ^Session) {
 
 // Replaces the active dataset; `file` must have been allocated from `arena` (from new_arena).
 set_dataset :: proc(s: ^Session, file: sav.File, arena: ^virtual.Arena, name: string) {
+	end_temporary(s)
 	free_arena(s.data_arena)
 	s.data_arena = arena
 	s.data = file
+	s.settings = {filter = -1, split_mode = .Off}
 	s.data_name = strings.clone(name, data_allocator(s))
 	s.has_data = true
 }
@@ -62,6 +81,31 @@ clear_output :: proc(s: ^Session) {
 	virtual.arena_destroy(&s.out_arena)
 	s.out_arena = {}
 	s.items = {}
+}
+
+// The dataset and settings commands act on: the TEMPORARY copy while one is active.
+active :: proc(s: ^Session) -> (^sav.File, ^Settings) {
+	if s.temp_on { return &s.temp_data, &s.temp_settings }
+	return &s.data, &s.settings
+}
+
+active_allocator :: proc(s: ^Session) -> runtime.Allocator {
+	return virtual.arena_allocator(s.temp_arena) if s.temp_on else data_allocator(s)
+}
+
+begin_temporary :: proc(s: ^Session) {
+	if s.temp_on { return }
+	s.temp_arena = new_arena()
+	s.temp_data = sav.clone(&s.data, virtual.arena_allocator(s.temp_arena))
+	s.temp_settings = s.settings
+	s.temp_on = true
+}
+
+// Called after every procedure: TEMPORARY changes last for exactly one.
+end_temporary :: proc(s: ^Session) {
+	if !s.temp_on { return }
+	free_arena(s.temp_arena)
+	s.temp_arena, s.temp_data, s.temp_on = nil, {}, false
 }
 
 // Runs every command in `src`. Returns the number of commands that failed.
@@ -90,22 +134,6 @@ report :: proc(s: ^Session, kind: output.Text_Kind, command, text: string) {
 	append(&s.items, output.Text{kind = kind, command = strings.clone(command), text = strings.clone(text)})
 }
 
-@(private)
-Command :: struct {
-	name: string,
-	run:  proc(s: ^Session, c: ^Cmd) -> bool,
-}
-
-@(private)
-COMMANDS := [?]Command {
-	{"COMPUTE", cmd_compute},
-	{"DESCRIPTIVES", cmd_descriptives},
-	{"EXECUTE", proc(s: ^Session, c: ^Cmd) -> bool { return true }},
-	{"FREQUENCIES", cmd_frequencies},
-	{"GET", cmd_get},
-	{"SAVE", cmd_save},
-}
-
 // Parsing state for one command's tokens (terminator excluded).
 Cmd :: struct {
 	name: string,
@@ -124,7 +152,13 @@ run_command :: proc(s: ^Session, toks: []syntax.Token) -> bool {
 	for c in COMMANDS {
 		if !keyword_matches(head.text, c.name) { continue }
 		cmd := Cmd{name = c.name, toks = toks, pos = 1, s = s}
-		return c.run(s, &cmd)
+		if c.second != "" {
+			if !accept_keyword(&cmd, c.second) { continue }
+			cmd.name = fmt.tprintf("%s %s", c.name, c.second)
+		}
+		ok := c.run(s, &cmd)
+		if c.procedure { end_temporary(s) }
+		return ok
 	}
 	report(s, .Error, "", fmt.tprintf("Line %d: unrecognized or not yet implemented command %s.", head.line, strings.to_upper(head.text, context.temp_allocator)))
 	return false
@@ -145,6 +179,11 @@ peek :: proc(c: ^Cmd) -> (syntax.Token, bool) {
 
 at_end :: proc(c: ^Cmd) -> bool {
 	return c.pos >= len(c.toks)
+}
+
+at_subcommand_end :: proc(c: ^Cmd) -> bool {
+	t, ok := peek(c)
+	return !ok || t.kind == .Slash
 }
 
 accept_kind :: proc(c: ^Cmd, kind: syntax.Token_Kind) -> bool {
@@ -179,13 +218,13 @@ need_data :: proc(c: ^Cmd) -> bool {
 	return fail(c, "there is no active dataset. Open one with GET FILE first.")
 }
 
-// Parses a variable list: names, `a TO b` (dictionary order) and ALL. Stops at '/' or the end.
+// Parses a variable list: names, `a TO b` (dictionary order) and ALL. Stops at '/', '(' or the end.
 parse_varlist :: proc(c: ^Cmd, numeric_only := true) -> (vars: [dynamic]int, ok: bool) {
 	vars = make([dynamic]int, context.temp_allocator)
-	file := &c.s.data
+	file, _ := active(c.s)
 	for {
 		t, has := peek(c)
-		if !has || t.kind == .Slash { break }
+		if !has || t.kind == .Slash || t.kind == .L_Paren { break }
 		if t.kind == .Keyword && strings.equal_fold(t.text, "ALL") {
 			c.pos += 1
 			for v, i in file.variables {
@@ -232,185 +271,74 @@ parse_file_spec :: proc(c: ^Cmd, keyword: string) -> (path: string, ok: bool) {
 	return t.text, true
 }
 
-// --- commands ---
-
-@(private)
-cmd_get :: proc(s: ^Session, c: ^Cmd) -> bool {
-	path := parse_file_spec(c, "FILE") or_return
-	arena := new_arena()
-	file, err := sav.read_file(path, virtual.arena_allocator(arena))
-	if err != nil {
-		free_arena(arena)
-		e := err.(sav.Read_Error)
-		if e.kind == .Io { return fail(c, "cannot open %s", path) }
-		return fail(c, "%s is not a readable SPSS data file (%v at byte %d)", path, e.kind, e.offset)
+// Builds the case stream for a procedure: FILTER, weight validity, then SPLIT FILE groups.
+// Spec: docs/specs/engine/procedure-context.md
+make_context :: proc(c: ^Cmd) -> procs.Context {
+	file, st := active(c.s)
+	rows := make([dynamic]int, 0, file.n_cases, context.temp_allocator)
+	weights := make([dynamic]f64, 0, file.n_cases, context.temp_allocator)
+	bad_weight := false
+	for r in 0 ..< file.n_cases {
+		if st.filter >= 0 {
+			fv := &file.variables[st.filter]
+			x := fv.numbers[r]
+			if x == 0 || transform.is_missing(fv, x, file.sysmis) { continue }
+		}
+		w := 1.0
+		if file.weight >= 0 {
+			wv := &file.variables[file.weight]
+			w = wv.numbers[r]
+			if transform.is_missing(wv, w, file.sysmis) || w <= 0 {
+				bad_weight = true
+				continue
+			}
+		}
+		append(&rows, r)
+		append(&weights, w)
 	}
-	set_dataset(s, file, arena, filepath.base(path))
-	return true
+	if bad_weight {
+		warn(c, "Warning # 3211. On at least one case, the value of the weight variable was zero, negative, or missing. Such cases are invisible to statistical procedures and graphs which need positively weighted cases, but remain on the file and are processed by non-statistical procedures and transformations.")
+	}
+
+	ctx := procs.Context{file = file, mode = st.split_mode if st.n_split > 0 else .Off}
+	if st.n_split == 0 {
+		groups := make([]procs.Group, 1, context.temp_allocator)
+		groups[0] = {rows = rows[:], weights = weights[:]}
+		ctx.groups = groups
+		return ctx
+	}
+
+	groups := make([dynamic]procs.Group, context.temp_allocator)
+	start := 0
+	for i in 0 ..= len(rows) {
+		if i < len(rows) && (i == start || same_split(file, st, rows[i], rows[start])) { continue }
+		if i > start {
+			labels := make([]string, st.n_split, context.temp_allocator)
+			parts := make([]string, st.n_split, context.temp_allocator)
+			for k in 0 ..< st.n_split {
+				v := &file.variables[st.split[k]]
+				labels[k] = procs.value_text(v, v.numbers[rows[start]])
+				parts[k] = fmt.tprintf("%s = %s", procs.var_title(v), labels[k])
+			}
+			append(&groups, procs.Group {
+				rows    = rows[start:i],
+				weights = weights[start:i],
+				labels  = labels,
+				caption = procs.caption(parts),
+			})
+		}
+		start = i
+	}
+	if len(groups) == 0 { append(&groups, procs.Group{}) } // no cases at all: one empty group
+	ctx.groups = groups[:]
+	return ctx
 }
 
 @(private)
-cmd_save :: proc(s: ^Session, c: ^Cmd) -> bool {
-	need_data(c) or_return
-	path := parse_file_spec(c, "OUTFILE") or_return
-	compression := sav.Compression.Bytecode
-	for accept_kind(c, .Slash) {
-		switch {
-		case accept_keyword(c, "COMPRESSED"):   compression = .Bytecode
-		case accept_keyword(c, "UNCOMPRESSED"): compression = .None
-		case:                                   return fail(c, "unsupported subcommand")
-		}
+same_split :: proc(file: ^sav.File, st: ^Settings, a, b: int) -> bool {
+	for k in 0 ..< st.n_split {
+		v := &file.variables[st.split[k]]
+		if v.numbers[a] != v.numbers[b] { return false }
 	}
-	data, err := sav.write(&s.data, compression, context.temp_allocator)
-	if err != nil { return fail(c, "cannot encode the dataset") }
-	if os.write_entire_file(path, data) != nil { return fail(c, "cannot write %s", path) }
-	return true
-}
-
-@(private)
-cmd_compute :: proc(s: ^Session, c: ^Cmd) -> bool {
-	need_data(c) or_return
-	target, ok := peek(c)
-	if !ok || target.kind != .Identifier { return fail(c, "expected a target variable name") }
-	c.pos += 1
-	if !accept_kind(c, .Equals) { return fail(c, "expected '=' after the target variable") }
-
-	file := &s.data
-	expr: ^transform.Node
-	perr: Maybe(transform.Parse_Error)
-	{
-		context.allocator = context.temp_allocator
-		expr, perr = transform.parse(c.toks[c.pos:], file)
-	}
-	if e, failed := perr.?; failed {
-		return fail(c, "%s (line %d, column %d)", e.message, e.token.line, e.token.col)
-	}
-
-	idx := transform.find_variable(file, target.text)
-	if idx < 0 {
-		da := data_allocator(s)
-		v := sav.Variable {
-			name    = strings.clone(target.text, da),
-			print   = {type = 5, width = 8, decimals = 2},
-			write   = {type = 5, width = 8, decimals = 2},
-			measure = .Scale,
-		}
-		v.numbers = make([dynamic]f64, file.n_cases, da)
-		append(&file.variables, v)
-		idx = len(file.variables) - 1
-	} else if file.variables[idx].width > 0 {
-		return fail(c, "string targets are not supported yet")
-	}
-
-	// Evaluate every case before storing, so the target's old values feed the expression.
-	results := make([]f64, file.n_cases, context.temp_allocator)
-	warnings: transform.Warnings
-	for row in 0 ..< file.n_cases {
-		results[row] = transform.eval(expr, file, row, &warnings)
-	}
-	copy(file.variables[idx].numbers[:], results)
-
-	if n := warnings[.Division_By_Zero]; n > 0 {
-		warn(c, "Warning # 511. A division by zero was attempted in %d case(s); the result was set to system-missing.", n)
-	}
-	if n := warnings[.Sqrt_Negative]; n > 0 {
-		warn(c, "Warning # 603. The argument to SQRT was negative in %d case(s); the result was set to system-missing.", n)
-	}
-	if n := warnings[.Log_Domain]; n > 0 {
-		warn(c, "The argument to LN or LG10 was not positive in %d case(s); the result was set to system-missing.", n)
-	}
-	return true
-}
-
-@(private)
-cmd_descriptives :: proc(s: ^Session, c: ^Cmd) -> bool {
-	need_data(c) or_return
-	if accept_keyword(c, "VARIABLES") { accept_kind(c, .Equals) }
-	vars := parse_varlist(c) or_return
-	stats := procs.DESC_DEFAULT
-	for accept_kind(c, .Slash) {
-		if !accept_keyword(c, "STATISTICS") { return fail(c, "unsupported subcommand") }
-		accept_kind(c, .Equals)
-		stats = {}
-		for !at_end(c) {
-			t, _ := peek(c)
-			if t.kind == .Slash { break }
-			found := false
-			names := [?]struct {
-				word: string,
-				stat: procs.Desc_Stats,
-			}{
-				{"DEFAULT", procs.DESC_DEFAULT}, {"ALL", procs.DESC_ALL}, {"MEAN", {.Mean}}, {"SEMEAN", {.Semean}},
-				{"STDDEV", {.Stddev}}, {"VARIANCE", {.Variance}}, {"RANGE", {.Range}}, {"MIN", {.Min}},
-				{"MAX", {.Max}}, {"SUM", {.Sum}}, {"SKEWNESS", {.Skewness}}, {"KURTOSIS", {.Kurtosis}},
-			}
-			for n in names {
-				if accept_keyword(c, n.word) {
-					stats += n.stat
-					found = true
-					break
-				}
-			}
-			if !found { return fail(c, "unknown statistic %s", t.text) }
-		}
-		if stats == {} { stats = procs.DESC_DEFAULT }
-	}
-	append(&s.items, procs.descriptives(&s.data, vars[:], stats))
-	return true
-}
-
-@(private)
-cmd_frequencies :: proc(s: ^Session, c: ^Cmd) -> bool {
-	need_data(c) or_return
-	if accept_keyword(c, "VARIABLES") { accept_kind(c, .Equals) }
-	vars := parse_varlist(c) or_return
-	opts: procs.Freq_Options
-	for accept_kind(c, .Slash) {
-		switch {
-		case accept_keyword(c, "FORMAT"):
-			accept_kind(c, .Equals)
-			for !at_end(c) {
-				t, _ := peek(c)
-				if t.kind == .Slash { break }
-				if accept_keyword(c, "NOTABLE") {
-					opts.no_table = true
-				} else {
-					c.pos += 1
-					warn(c, "FORMAT keyword %s is not implemented yet and was ignored", t.text)
-				}
-			}
-		case accept_keyword(c, "STATISTICS"):
-			accept_kind(c, .Equals)
-			any_named := false
-			for !at_end(c) {
-				t, _ := peek(c)
-				if t.kind == .Slash { break }
-				names := [?]struct {
-					word: string,
-					stat: procs.Freq_Stats,
-				}{
-					{"DEFAULT", procs.FREQ_DEFAULT}, {"ALL", procs.FREQ_ALL}, {"NONE", {}}, {"MEAN", {.Mean}},
-					{"SEMEAN", {.Semean}}, {"MEDIAN", {.Median}}, {"MODE", {.Mode}}, {"STDDEV", {.Stddev}},
-					{"VARIANCE", {.Variance}}, {"SKEWNESS", {.Skewness}}, {"SESKEW", {.Seskew}},
-					{"KURTOSIS", {.Kurtosis}}, {"SEKURT", {.Sekurt}}, {"RANGE", {.Range}},
-					{"MINIMUM", {.Min}}, {"MAXIMUM", {.Max}}, {"SUM", {.Sum}},
-				}
-				found := false
-				for n in names {
-					if accept_keyword(c, n.word) {
-						opts.stats += n.stat
-						found, any_named = true, true
-						break
-					}
-				}
-				if !found { return fail(c, "unknown statistic %s", t.text) }
-			}
-			if !any_named { opts.stats = procs.FREQ_DEFAULT }
-		case:
-			t, _ := peek(c)
-			return fail(c, "subcommand %s is not implemented yet", t.text)
-		}
-	}
-	procs.frequencies(&s.data, vars[:], opts, &s.items)
 	return true
 }
