@@ -1,0 +1,21 @@
+# Build output
+/build/
+*.exe
+*.pdb
+*.ilk
+*.obj
+*.lib
+*.exp
+
+# Local tools and RE workspace (never commit IBM material)
+/tools/
+/re-workspace/
+*.gpr
+*.rep/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store

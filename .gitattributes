@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.sav binary
+*.zsav binary
+*.por binary
+*.spv binary
+*.xlsx binary
