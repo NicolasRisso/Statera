@@ -48,7 +48,7 @@ The engine is a library. `app/`, `automation/` and the CLI are its clients, and 
 - [x] Golden harness driving headless SPSS
 - [x] Push gate (`scripts/gate.*`) and 3-OS CI
 - [x] rea + Ghidra toolchain verified
-- [ ] Architecture spec from RE ([specs/architecture.md](specs/architecture.md))
+- [x] Architecture spec from RE ([specs/architecture.md](specs/architecture.md))
 - [ ] Register rea as an MCP server for agent sessions
 
 ### Phase 1: data I/O
