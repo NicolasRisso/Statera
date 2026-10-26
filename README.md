@@ -142,9 +142,25 @@ Reverse engineering for interoperability is lawful in many jurisdictions but res
 
 ---
 
+## Screenshots
+
+| Dark | Light |
+|---|---|
+| ![OpenSPSS dark theme](docs/images/ui-dark.png) | ![OpenSPSS light theme](docs/images/ui-light.png) |
+
+The theme follows your OS by default. Switch it with the System / Light / Dark control in the menu bar or with `Ctrl+Shift+T`.
+
 ## Building
 
-> Not yet. The build will need the [Odin compiler](https://odin-lang.org/docs/install/) (dev-2026-09 or newer). Instructions will land with the first code.
+Requirements: the [Odin compiler](https://odin-lang.org/docs/install/) (dev-2026-09 or newer), Python 3, and on Windows Visual Studio 2022 C++ tools.
+
+```powershell
+scripts/setup_imgui.ps1     # once: fetch and build Dear ImGui bindings into vendor/imgui
+scripts/build.ps1           # build/openspss.exe (add -Release for an optimized, console-less build)
+scripts/gate.ps1            # checks + tests; run before every push
+```
+
+`build/openspss.exe [file.sav] [--light|--dark]` opens a data file. You can also drag a `.sav` onto the window. Linux and macOS build scripts will follow with the release pipeline.
 
 ## Contributing
 
