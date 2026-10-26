@@ -1,0 +1,4 @@
+GET FILE='@ROOT@/tests/golden/data/expected/survey.sav'.
+DESCRIPTIVES VARIABLES=age score rating.
+DESCRIPTIVES age score /STATISTICS=ALL.
+DESCRIPTIVES age TO score /STATISTICS=MEAN SUM SEMEAN VARIANCE RANGE.
