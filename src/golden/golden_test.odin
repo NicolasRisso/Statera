@@ -22,6 +22,9 @@ ROOT :: #directory + "/../.."
 @(test) test_freq_stats :: proc(t: ^testing.T) { run_case(t, "freq_stats") }
 @(test) test_desc_basic :: proc(t: ^testing.T) { run_case(t, "desc_basic") }
 @(test) test_compute_basic :: proc(t: ^testing.T) { run_case(t, "compute_basic", compare_saved = "computed.sav") }
+@(test) test_ctx_weight :: proc(t: ^testing.T) { run_case(t, "ctx_weight") }
+@(test) test_ctx_filter :: proc(t: ^testing.T) { run_case(t, "ctx_filter") }
+@(test) test_ctx_split :: proc(t: ^testing.T) { run_case(t, "ctx_split") }
 
 Flat_Cell :: struct {
 	row, col:  string, // paths joined with " / "
@@ -33,6 +36,7 @@ Flat_Cell :: struct {
 
 Flat_Table :: struct {
 	subtype, title: string,
+	captions:       string,
 	cells:          [dynamic]Flat_Cell,
 }
 
@@ -74,8 +78,8 @@ compare_tables :: proc(t: ^testing.T, ours, theirs: []Flat_Table) {
 	testing.expectf(t, len(ours) == len(theirs), "table count: ours %d, SPSS %d", len(ours), len(theirs))
 	for i in 0 ..< min(len(ours), len(theirs)) {
 		a, b := ours[i], theirs[i]
-		testing.expectf(t, a.subtype == b.subtype && a.title == b.title,
-			"table %d: ours %q/%q, SPSS %q/%q", i, a.subtype, a.title, b.subtype, b.title)
+		testing.expectf(t, a.subtype == b.subtype && a.title == b.title && a.captions == b.captions,
+			"table %d: ours %q/%q [%s], SPSS %q/%q [%s]", i, a.subtype, a.title, a.captions, b.subtype, b.title, b.captions)
 		mismatches := 0
 		for j in 0 ..< max(len(a.cells), len(b.cells)) {
 			if j >= len(a.cells) || j >= len(b.cells) {
@@ -109,7 +113,11 @@ flatten_ours :: proc(items: []output.Item) -> [dynamic]Flat_Table {
 	for item in items {
 		table, ok := item.(output.Table)
 		if !ok { continue }
-		ft := Flat_Table{subtype = table.subtype, title = table.title}
+		ft := Flat_Table {
+			subtype  = table.subtype,
+			title    = table.title,
+			captions = strings.join(table.captions, "; ", context.temp_allocator),
+		}
 		ft.cells = make([dynamic]Flat_Cell, context.temp_allocator)
 		for c in table.cells {
 			append(&ft.cells, Flat_Cell {
@@ -155,7 +163,17 @@ walk_oms :: proc(doc: ^xml.Document, id: xml.Element_ID, tables: ^[dynamic]Flat_
 	path, axis, table := path, axis, table
 	switch e.ident {
 	case "pivotTable":
-		append(tables, Flat_Table{subtype = attr(e, "subType"), title = attr(e, "text"), cells = make([dynamic]Flat_Cell, context.temp_allocator)})
+		captions := make([dynamic]string, context.temp_allocator)
+		for v in e.value {
+			child, is_elem := v.(xml.Element_ID)
+			if is_elem && doc.elements[child].ident == "footnote" { collect_notes(doc, child, &captions) }
+		}
+		append(tables, Flat_Table {
+			subtype  = attr(e, "subType"),
+			title    = attr(e, "text"),
+			captions = strings.join(captions[:], "; ", context.temp_allocator),
+			cells    = make([dynamic]Flat_Cell, context.temp_allocator),
+		})
 		table = &tables[len(tables) - 1]
 		path = {}
 	case "dimension":
