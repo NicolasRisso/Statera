@@ -43,18 +43,21 @@ SPSS is the default tool in many universities, hospitals and research labs. It's
 ## Architecture (planned)
 
 ```
-openspss/
-├── core/        # dataset model: columnar variables, dictionary, labels, missing values, weights, splits
+src/
 ├── io/          # .sav / .zsav / .por / csv / xlsx readers & writers
+├── data/        # dataset model: columnar variables, dictionary, labels, missing values, weights, splits
 ├── syntax/      # lexer, parser and command grammar; error reporting identical to SPSS
 ├── transform/   # expression VM: COMPUTE/RECODE/IF/LOOP, function library, date math
+├── engine/      # command dispatch, data passes, SET/TEMPORARY semantics
 ├── procs/       # statistical procedures, one package per command family
 ├── numerics/    # linear algebra, distributions, special functions, optimizers
 ├── output/      # pivot-table model, footnotes, TableLooks, exporters
-├── ui/          # Dear ImGui front-end: data view, variable view, syntax editor, output viewer
 ├── automation/  # MCP server, local HTTP/JSON API, CLI batch runner
-└── tests/       # golden tests against reference output
+└── app/         # Dear ImGui front-end: data view, variable view, syntax editor, output viewer
+tests/golden/    # golden tests against reference output
 ```
+
+- **Platforms:** Windows, Linux and macOS, all first-class. CI runs the gate on all three, and releases ship native installers for each (Windows setup `.exe`, macOS `.dmg`, Linux AppImage/`.deb`).
 
 - **UI stack:** Dear ImGui (docking branch) via generated [dear_bindings](https://github.com/dearimgui/dear_bindings) for Odin, on SDL3 (`vendor:sdl3`) with the OpenGL 3 backend.
 - **Engine and UI are decoupled.** The UI is just one client of the engine. The CLI, the MCP server and the API go through the same command interface, so anything the UI can do, an agent can do too.
@@ -121,7 +124,9 @@ Running `openspss serve` exposes the same operations as a JSON-over-HTTP API, fo
 7. **Automation.** CLI batch mode, MCP server, local API.
 8. **Procedure breadth.** GLM, logistic, nonparametrics, factor, reliability, clustering, survival, mixed models, and more.
 
-A detailed plan lives in [`docs/PLAN.md`](docs/PLAN.md) (coming soon).
+9. **First release.** GitHub Release with installers for Windows, macOS and Linux.
+
+The detailed, living plan is in [`docs/PLAN.md`](docs/PLAN.md).
 
 ---
 

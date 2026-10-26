@@ -83,7 +83,8 @@ Sources: public docs §…, black-box run tests/golden/<case>, rea evidence (sum
 - **Errors are values.** Return `(T, Error)` with an enum or union. The engine never `panic`s on user input or file data. Malformed files and bad syntax produce SPSS-style errors.
 - **Numerics are `f64`.** The system-missing value is a distinct sentinel handled explicitly. Match the reference's order of operations when it affects results; the spec says when.
 - **Deterministic.** The same input gives bit-identical output across runs and thread counts. Parallel reductions use a fixed partitioning.
-- **Engine and UI are separate.** `ui/` and `automation/` talk to the engine only through the command interface. Nothing in `core/`, `io/`, `syntax/`, `transform/`, `procs/`, `numerics/` or `output/` may import `ui/`.
+- **Engine and UI are separate.** `src/app/` and `src/automation/` talk to the engine only through the command interface. Nothing else under `src/` may import `src/app/`.
+- **Cross-platform.** Windows, Linux and macOS are all first-class. No OS-specific code outside small `*_windows.odin` / `*_linux.odin` / `*_darwin.odin` files. CI must stay green on all three.
 - Prefer data-oriented layouts: columnar variables, SoA, and contiguous buffers.
 - Add dependencies sparingly. Odin `core:`/`vendor:` first, then vendored single-purpose C libs with compatible licenses.
 - Comments explain *why*. Don't narrate obvious code.
