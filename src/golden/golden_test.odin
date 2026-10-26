@@ -25,6 +25,8 @@ ROOT :: #directory + "/../.."
 @(test) test_ctx_weight :: proc(t: ^testing.T) { run_case(t, "ctx_weight") }
 @(test) test_ctx_filter :: proc(t: ^testing.T) { run_case(t, "ctx_filter") }
 @(test) test_ctx_split :: proc(t: ^testing.T) { run_case(t, "ctx_split") }
+@(test) test_xtab_basic :: proc(t: ^testing.T) { run_case(t, "xtab_basic") }
+@(test) test_xtab_stats :: proc(t: ^testing.T) { run_case(t, "xtab_stats") }
 
 Flat_Cell :: struct {
 	row, col, layer: string, // paths joined with " / "
