@@ -11,7 +11,7 @@ Sources: Command Syntax Reference (public); standard contingency-table statistic
 - **Weighted cell counts are rounded per cell** to integers, half away from zero (/COUNT ROUND CELL is the default). Marginals, N and every statistic use the rounded cells (golden: 23 summed weights → N = 25).
 
 ## Output
-1. **Case Processing Summary** (one per CROSSTABS command, one row per table, labelled `Row label * Col label`). Columns: `Valid / N`, `Valid / Percent`, `Missing / N`, `Missing / Percent`, `Total / N`, `Total / Percent`. Percent cells display with 1 decimal and a `%` suffix (`100.0%`, `.0%`).
+1. **Case Processing Summary** (one per CROSSTABS command, one row per table, labelled `Row label * Col label`). Columns: `Valid / N`, `Valid / Percent`, `Missing / N`, `Missing / Percent`, `Total / N`, `Total / Percent`. Percent cells display with 1 decimal and a `%` suffix (`100.0%`, `.0%`). With weights, **Valid N is the rounded table N, but the percentages and Missing/Total N use the unrounded weights**. So the golden case shows Valid 25 (100.0%) next to Total 23.
 2. Per table, **`<Row label> * <Col label> Crosstabulation`**:
    - Columns: `<col label> / <value>` for each column value that occurs (ascending), then `Total`.
    - With only COUNT: rows are `<row label> / <value>`, then `Total`. The statistic `Count` is a layer.
