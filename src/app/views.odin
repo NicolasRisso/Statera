@@ -4,7 +4,9 @@ import "core:fmt"
 import "core:strings"
 
 import im "../../vendor/imgui"
+import "../engine"
 import "../io/sav"
+import "../output"
 
 WIN_DATA :: "Data View"
 WIN_VARS :: "Variable View"
@@ -49,7 +51,7 @@ build_default_layout :: proc(dock_id: im.ID, vp: ^im.Viewport) {
 	im.DockBuilderSetNodeSize(dock_id, vp.WorkSize)
 
 	left, right, top, bottom: im.ID
-	im.DockBuilderSplitNode(dock_id, .Right, 0.34, &right, &left)
+	im.DockBuilderSplitNode(dock_id, .Right, 0.42, &right, &left)
 	im.DockBuilderSplitNode(left, .Down, 0.34, &bottom, &top)
 	im.DockBuilderDockWindow(WIN_DATA, top)
 	im.DockBuilderDockWindow(WIN_VARS, top)
@@ -85,7 +87,7 @@ draw_menu_bar :: proc(app: ^App) {
 		im.EndMenu()
 	}
 	if im.BeginMenu("Run") {
-		if im.MenuItem("Check syntax", "Ctrl+Enter") { check_syntax(app) }
+		if im.MenuItem("Run all syntax", "Ctrl+Enter") { run_editor(app) }
 		im.EndMenu()
 	}
 	if im.BeginMenu("Help") {
@@ -126,9 +128,9 @@ draw_status_bar :: proc(app: ^App) {
 	h := im.GetFrameHeight()
 	if im.BeginViewportSideBar("##status", im.GetMainViewport(), .Down, h, flags) {
 		if im.BeginMenuBar() {
-			f := &app.data
+			f := data(app)
 			text_colored(palette.ok, "●")
-			im.TextUnformatted(cstr(fmt.tprintf("%s   %d cases × %d variables", app.data_name, f.n_cases, len(f.variables))))
+			im.TextUnformatted(cstr(fmt.tprintf("%s   %d cases × %d variables", app.session.data_name, f.n_cases, len(f.variables))))
 			right := fmt.tprintf("Weight: %s   Filter: off   Split: off   %.0f fps",
 				f.variables[f.weight].name if f.weight >= 0 else "off", im.GetIO().Framerate)
 			w := im.CalcTextSize(cstr(right)).x
@@ -172,11 +174,11 @@ format_number :: proc(v: ^sav.Variable, x: f64) -> string {
 draw_data_view :: proc(app: ^App) {
 	defer im.End()
 	if !im.Begin(WIN_DATA) { return }
-	f := &app.data
+	f := data(app)
 
 	im.Checkbox("Value labels", &app.show_labels)
 	im.SameLine()
-	text_colored(palette.dim, fmt.tprintf("   %s · %d cases", app.data_name, f.n_cases))
+	text_colored(palette.dim, fmt.tprintf("   %s · %d cases", app.session.data_name, f.n_cases))
 
 	n_cols := min(len(f.variables), 511)
 	if n_cols == 0 {
@@ -223,7 +225,7 @@ draw_cell :: proc(app: ^App, v: ^sav.Variable, row: int) {
 	}
 	if row >= len(v.numbers) { return }
 	x := v.numbers[row]
-	if x == app.data.sysmis {
+	if x == data(app).sysmis {
 		text_colored(palette.sysmis, ".")
 		return
 	}
@@ -242,7 +244,7 @@ draw_cell :: proc(app: ^App, v: ^sav.Variable, row: int) {
 draw_variable_view :: proc(app: ^App) {
 	defer im.End()
 	if !im.Begin(WIN_VARS) { return }
-	f := &app.data
+	f := data(app)
 
 	flags := im.TableFlags_ScrollY | im.TableFlags_RowBg | im.TableFlags_BordersInnerV | im.TableFlags_BordersOuter |
 		im.TableFlags_Resizable
@@ -327,9 +329,9 @@ draw_syntax :: proc(app: ^App) {
 	defer im.End()
 	if !im.Begin(WIN_SYNTAX) { return }
 
-	if im.Button("▶ Check  (Ctrl+Enter)") { check_syntax(app) }
+	if im.Button("▶ Run  (Ctrl+Enter)") { run_editor(app) }
 	im.SameLine()
-	text_colored(palette.dim, "Lexer only for now: commands are tokenized, not executed.")
+	text_colored(palette.dim, "Supported: GET, SAVE, COMPUTE, EXECUTE, FREQUENCIES, DESCRIPTIVES")
 
 	im.PushFontFloat(app.fonts.mono, 0)
 	im.PushStyleColorImVec4(.FrameBg, palette.bg)
@@ -344,55 +346,167 @@ draw_output :: proc(app: ^App) {
 	defer im.End()
 	if !im.Begin(WIN_OUTPUT) { return }
 
-	if im.BeginChild("##outline", {190, 0}, {.ResizeX, .Borders}) {
+	items := app.session.items[:]
+	if im.BeginChild("##outline", {200, 0}, {.ResizeX, .Borders}) {
 		text_colored(palette.dim, "OUTLINE")
-		for item, i in app.output {
-			icon := "× " if item.kind == .Error else ("■ " if item.kind == .Table else "• ")
-			if im.Selectable(cstr(fmt.tprintf("%s%s##o%d", icon, item.title, i))) { app.output_focus = i }
+		for item, i in items {
+			label: string
+			switch v in item {
+			case output.Table:
+				label = fmt.tprintf("■ %s", v.title)
+			case output.Text:
+				if v.kind == .Note { continue }
+				label = fmt.tprintf("%s %s", "×" if v.kind == .Error else "•", first_line(v.text, 40))
+			}
+			if im.Selectable(cstr(fmt.tprintf("%s##o%d", label, i))) { app.output_focus = i }
 		}
 	}
 	im.EndChild()
 	im.SameLine()
 
 	if im.BeginChild("##items") {
-		for &item, i in app.output {
+		for &item, i in items {
 			im.PushIDInt(i32(i))
-			draw_output_item(&item)
+			switch &v in item {
+			case output.Table: draw_pivot_table(&v)
+			case output.Text:  draw_output_text(&v)
+			}
 			im.PopID()
 			if app.output_focus == i {
 				im.SetScrollHereY(0)
 				app.output_focus = -1
 			}
-			im.Dummy({0, 10})
 		}
 	}
 	im.EndChild()
 }
 
 @(private = "file")
-draw_output_item :: proc(item: ^Output_Item) {
-	title_col := palette.error if item.kind == .Error else palette.text
-	text_colored(title_col, item.title)
-	text_colored(palette.dim, item.subtitle)
-	if item.text != "" {
-		im.PushTextWrapPos(0)
-		im.TextUnformatted(cstr(item.text))
-		im.PopTextWrapPos()
-	}
-	if len(item.columns) == 0 { return }
+first_line :: proc(s: string, max_len: int) -> string {
+	line := s
+	if i := strings.index_byte(line, '\n'); i >= 0 { line = line[:i] }
+	return line if len(line) <= max_len else fmt.tprintf("%s…", line[:max_len])
+}
 
-	flags := im.TableFlags_RowBg | im.TableFlags_BordersOuter | im.TableFlags_BordersInnerH | im.TableFlags_SizingFixedFit
-	if !im.BeginTable("##t", i32(len(item.columns)), flags) { return }
-	defer im.EndTable()
-	for c in item.columns { im.TableSetupColumn(cstr(c)) }
-	im.TableHeadersRow()
-	for row in item.rows {
-		im.TableNextRow()
-		for cell in row {
-			im.TableNextColumn()
-			im.TextUnformatted(cstr(cell))
+@(private = "file")
+draw_output_text :: proc(t: ^output.Text) {
+	switch t.kind {
+	case .Heading:
+		im.Dummy({0, 4})
+		text_colored(palette.accent, t.text)
+	case .Note:
+		im.PushFontFloat(nil, 0)
+		text_colored(palette.dim, t.text)
+		im.PopFont()
+	case .Warning, .Error:
+		col := palette.error if t.kind == .Error else palette.missing
+		im.PushStyleColorImVec4(.ChildBg, {col.x, col.y, col.z, 0.08})
+		flags := im.ChildFlags{.AutoResizeY, .Borders}
+		if im.BeginChild("##msg", {0, 0}, flags) {
+			text_colored(col, "Error" if t.kind == .Error else "Warning")
+			im.PushTextWrapPos(0)
+			im.TextUnformatted(cstr(t.text))
+			im.PopTextWrapPos()
+		}
+		im.EndChild()
+		im.PopStyleColor()
+	}
+	im.Dummy({0, 6})
+}
+
+// Renders a flat-cell table as a pivot grid: unique row/column paths become header bands,
+// repeated outer labels are suppressed so groups read like merged cells.
+@(private = "file")
+draw_pivot_table :: proc(t: ^output.Table) {
+	rows := make([dynamic][]string, context.temp_allocator)
+	cols := make([dynamic][]string, context.temp_allocator)
+	row_index := make(map[string]int, allocator = context.temp_allocator)
+	col_index := make(map[string]int, allocator = context.temp_allocator)
+	key :: proc(p: []string) -> string { return strings.join(p, "\x1f", context.temp_allocator) }
+	row_depth, col_depth := 1, 1
+	for c in t.cells {
+		if key(c.row) not_in row_index {
+			row_index[key(c.row)] = len(rows)
+			append(&rows, c.row)
+			row_depth = max(row_depth, len(c.row))
+		}
+		if key(c.col) not_in col_index {
+			col_index[key(c.col)] = len(cols)
+			append(&cols, c.col)
+			col_depth = max(col_depth, len(c.col))
 		}
 	}
+	grid := make([]^output.Cell, len(rows) * len(cols), context.temp_allocator)
+	notes := make([dynamic]string, context.temp_allocator)
+	for &c in t.cells {
+		grid[row_index[key(c.row)] * len(cols) + col_index[key(c.col)]] = &c
+	}
+
+	text_colored(palette.text, t.title)
+	n_cols := row_depth + len(cols)
+	// ScrollX keeps columns at their natural width (scrolling when the pane is narrow); it
+	// needs an explicit height, so size the table to its rows.
+	flags := im.TableFlags_BordersOuter | im.TableFlags_BordersInnerH | im.TableFlags_SizingFixedFit |
+		im.TableFlags_RowBg | im.TableFlags_ScrollX
+	row_h := im.GetTextLineHeight() + 2 * im.GetStyle().CellPadding.y
+	height := f32(col_depth + len(rows)) * row_h + im.GetStyle().ScrollbarSize + 4
+	if n_cols <= 512 && im.BeginTable("##pivot", i32(n_cols), flags, {0, height}) {
+		defer im.EndTable()
+		for level in 0 ..< col_depth {
+			// A plain row (not .Headers) so header text counts toward column auto-fit.
+			im.TableNextRow()
+			im.TableSetBgColor(.RowBg0, im.GetColorU32ImVec4(palette.header))
+			for _ in 0 ..< row_depth { im.TableNextColumn() }
+			for c, ci in cols {
+				im.TableNextColumn()
+				if level >= len(c) { continue }
+				// Show a band label only where it starts.
+				if ci > 0 && level < len(cols[ci - 1]) && slice_prefix_equal(cols[ci - 1], c, level + 1) { continue }
+				text_colored(palette.dim, c[level])
+			}
+		}
+		for r, ri in rows {
+			im.TableNextRow()
+			for level in 0 ..< row_depth {
+				im.TableNextColumn()
+				if level >= len(r) { continue }
+				if ri > 0 && level < len(rows[ri - 1]) && slice_prefix_equal(rows[ri - 1], r, level + 1) { continue }
+				im.TextUnformatted(cstr(r[level]))
+			}
+			for _, ci in cols {
+				im.TableNextColumn()
+				cell := grid[ri * len(cols) + ci]
+				if cell == nil { continue }
+				text := cell.text
+				for note in cell.footnotes {
+					mark := len(notes)
+					for existing, k in notes {
+						if existing == note { mark = k }
+					}
+					if mark == len(notes) { append(&notes, note) }
+					text = fmt.tprintf("%s%c", text, 'a' + rune(mark))
+				}
+				// Right-align numbers like SPSS.
+				w := im.CalcTextSize(cstr(text)).x
+				avail := im.GetContentRegionAvail().x
+				if cell.has_value && avail > w { im.SetCursorPosX(im.GetCursorPosX() + avail - w) }
+				im.TextUnformatted(cstr(text))
+			}
+		}
+	}
+	for note, k in notes {
+		text_colored(palette.dim, fmt.tprintf("%c. %s", 'a' + rune(k), note))
+	}
+	im.Dummy({0, 12})
+}
+
+@(private = "file")
+slice_prefix_equal :: proc(a, b: []string, n: int) -> bool {
+	if len(a) < n || len(b) < n { return false }
+	for i in 0 ..< n {
+		if a[i] != b[i] { return false }
+	}
+	return true
 }
 
 Palette_Command :: struct {
@@ -404,14 +518,14 @@ Palette_Command :: struct {
 PALETTE_COMMANDS := [?]Palette_Command {
 	{"Open data file…", "Ctrl+O", proc(app: ^App) { show_open_dialog(app) }},
 	{"Load demo dataset", "", proc(app: ^App) { load_demo_dataset(app) }},
-	{"Check syntax", "Ctrl+Enter", proc(app: ^App) { check_syntax(app) }},
+	{"Run all syntax", "Ctrl+Enter", proc(app: ^App) { run_editor(app) }},
 	{"Toggle value labels", "Ctrl+L", proc(app: ^App) { app.show_labels = !app.show_labels }},
 	{"Toggle light/dark theme", "Ctrl+Shift+T", proc(app: ^App) { toggle_theme(app) }},
 	{"Theme: follow system", "", proc(app: ^App) { set_theme_mode(app, .System) }},
 	{"Theme: light", "", proc(app: ^App) { set_theme_mode(app, .Light) }},
 	{"Theme: dark", "", proc(app: ^App) { set_theme_mode(app, .Dark) }},
 	{"Reset layout", "", proc(app: ^App) { app.reset_layout = true }},
-	{"Clear output", "", proc(app: ^App) { clear(&app.output) }},
+	{"Clear output", "", proc(app: ^App) { engine.clear_output(&app.session) }},
 	{"Show ImGui demo", "", proc(app: ^App) { app.show_demo = true }},
 	{"Quit", "Ctrl+Q", proc(app: ^App) { app.running = false }},
 }

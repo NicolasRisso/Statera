@@ -66,7 +66,7 @@ main :: proc() {
 	imgui_impl_opengl3.Init("#version 150")
 	defer imgui_impl_opengl3.Shutdown()
 
-	// Usage: openspss [file.sav] [--light | --dark] [--screenshot out.png]
+	// Usage: statera [file.sav] [--light | --dark] [--run] [--screenshot out.png]
 	screenshot_path := ""
 	for i := 1; i < len(os.args); i += 1 {
 		switch arg := os.args[i]; arg {
@@ -74,6 +74,8 @@ main :: proc() {
 			set_theme_mode(app, .Light, save = false)
 		case "--dark":
 			set_theme_mode(app, .Dark, save = false)
+		case "--run":
+			run_editor(app)
 		case "--screenshot":
 			if i + 1 < len(os.args) { screenshot_path = os.args[i + 1]; i += 1 }
 		case:
@@ -163,7 +165,7 @@ handle_shortcuts :: proc(app: ^App) {
 	if im.Shortcut(chord(.O), {.RouteGlobal}) { show_open_dialog(app) }
 	if im.Shortcut(chord(.L), {.RouteGlobal}) { app.show_labels = !app.show_labels }
 	if im.Shortcut(chord(.Q), {.RouteGlobal}) { app.running = false }
-	if im.Shortcut(chord(.Enter), {.RouteGlobal}) { check_syntax(app) }
+	if im.Shortcut(chord(.Enter), {.RouteGlobal}) { run_editor(app) }
 	if im.Shortcut(CTRL | i32(im.Key.ImGuiMod_Shift) | i32(im.Key.T), {.RouteGlobal}) { toggle_theme(app) }
 }
 
