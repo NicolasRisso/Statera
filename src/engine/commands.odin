@@ -21,6 +21,7 @@ Command :: struct {
 @(private)
 COMMANDS := [?]Command {
 	{name = "COMPUTE", run = cmd_compute},
+	{name = "CROSSTABS", run = cmd_crosstabs, procedure = true},
 	{name = "DESCRIPTIVES", run = cmd_descriptives, procedure = true},
 	{name = "EXECUTE", run = proc(s: ^Session, c: ^Cmd) -> bool { return true }, procedure = true},
 	{name = "FILTER", run = cmd_filter},
@@ -325,6 +326,55 @@ cmd_descriptives :: proc(s: ^Session, c: ^Cmd) -> bool {
 	}
 	ctx := make_context(c)
 	procs.descriptives(&ctx, vars[:], stats, &s.items)
+	return true
+}
+
+@(private)
+cmd_crosstabs :: proc(s: ^Session, c: ^Cmd) -> bool {
+	need_data(c) or_return
+	pairs := make([dynamic]procs.Xtab_Pair, context.temp_allocator)
+	opts: procs.Xtab_Options
+	first := true
+	for !at_end(c) {
+		slash := accept_kind(c, .Slash)
+		switch {
+		case accept_keyword(c, "TABLES") || (first && !slash):
+			accept_kind(c, .Equals)
+			rows := parse_varlist(c) or_return
+			if !accept_keyword(c, "BY") { return fail(c, "expected BY in the table list") }
+			cols := parse_varlist(c) or_return
+			if t, ok := peek(c); ok && t.kind == .Keyword && strings.equal_fold(t.text, "BY") {
+				return fail(c, "layer variables (a second BY) are not implemented yet")
+			}
+			for r in rows {
+				for col in cols { append(&pairs, procs.Xtab_Pair{r, col}) }
+			}
+		case accept_keyword(c, "CELLS"):
+			accept_kind(c, .Equals)
+			names := [?]struct {
+				word: string,
+				stat: procs.Xtab_Cells,
+			}{
+				{"COUNT", {.Count}}, {"EXPECTED", {.Expected}}, {"ROW", {.Row}}, {"COLUMN", {.Column}},
+				{"TOTAL", {.Total}}, {"ALL", {.Count, .Expected, .Row, .Column, .Total}}, {"NONE", {}},
+			}
+			opts.cells, _ = parse_stat_keywords(c, procs.Xtab_Cells, names[:]) or_return
+		case accept_keyword(c, "STATISTICS"):
+			accept_kind(c, .Equals)
+			names := [?]struct {
+				word: string,
+				stat: procs.Xtab_Stats,
+			}{{"CHISQ", {.Chisq}}, {"PHI", {.Phi}}, {"CC", {.Cc}}, {"NONE", {}}}
+			opts.stats, _ = parse_stat_keywords(c, procs.Xtab_Stats, names[:]) or_return
+		case:
+			t, _ := peek(c)
+			return fail(c, "subcommand %s is not implemented yet", t.text)
+		}
+		first = false
+	}
+	if len(pairs) == 0 { return fail(c, "no table list (TABLES = rows BY columns)") }
+	ctx := make_context(c)
+	procs.crosstabs(&ctx, pairs[:], opts, &s.items)
 	return true
 }
 

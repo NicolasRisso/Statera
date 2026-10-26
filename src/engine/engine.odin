@@ -225,6 +225,7 @@ parse_varlist :: proc(c: ^Cmd, numeric_only := true) -> (vars: [dynamic]int, ok:
 	for {
 		t, has := peek(c)
 		if !has || t.kind == .Slash || t.kind == .L_Paren { break }
+		if t.kind == .Keyword && (strings.equal_fold(t.text, "BY") || strings.equal_fold(t.text, "WITH")) { break }
 		if t.kind == .Keyword && strings.equal_fold(t.text, "ALL") {
 			c.pos += 1
 			for v, i in file.variables {
