@@ -14,7 +14,7 @@ Prefs :: struct {
 
 prefs_load :: proc() -> Prefs {
 	p := Prefs{theme_mode = .System}
-	if base := sdl.GetPrefPath("RissoProductions", "OpenSPSS"); base != nil {
+	if base := sdl.GetPrefPath("RissoProductions", "Statera"); base != nil {
 		p.dir = strings.clone(string(cstring(base)))
 		sdl.free(rawptr(base))
 	}

@@ -65,7 +65,7 @@ draw_menu_bar :: proc(app: ^App) {
 	if !im.BeginMainMenuBar() { return }
 	defer im.EndMainMenuBar()
 
-	text_colored(palette.accent, "OpenSPSS")
+	text_colored(palette.accent, "Statera")
 	im.Dummy({8, 0})
 	if im.BeginMenu("File") {
 		if im.MenuItem("Open data file…", "Ctrl+O") { show_open_dialog(app) }

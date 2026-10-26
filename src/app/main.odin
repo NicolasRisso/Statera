@@ -1,4 +1,4 @@
-// OpenSPSS desktop application: SDL3 window, OpenGL 3 renderer, Dear ImGui docking UI.
+// Statera desktop application: SDL3 window, OpenGL 3 renderer, Dear ImGui docking UI.
 package app
 
 import "base:runtime"
@@ -27,7 +27,7 @@ main :: proc() {
 	sdl.GL_SetAttribute(.CONTEXT_MINOR_VERSION, GL_MINOR)
 	sdl.GL_SetAttribute(.DOUBLEBUFFER, 1)
 
-	window := sdl.CreateWindow("OpenSPSS", 1440, 900, {.OPENGL, .RESIZABLE, .HIGH_PIXEL_DENSITY, .HIDDEN})
+	window := sdl.CreateWindow("Statera", 1440, 900, {.OPENGL, .RESIZABLE, .HIGH_PIXEL_DENSITY, .HIDDEN})
 	if window == nil {
 		os.exit(1)
 	}

@@ -1,4 +1,4 @@
-# OpenSPSS: master plan
+# Statera: master plan
 
 This is the living plan for rewriting SPSS Statistics as a behavior-compatible, open-source Odin application. Rules for working on it are in [AGENTS.md](../AGENTS.md). Engine architecture findings from reverse engineering are in [specs/architecture.md](specs/architecture.md).
 
@@ -21,7 +21,7 @@ This is the living plan for rewriting SPSS Statistics as a behavior-compatible, 
 - every output table as OMS XML (full-precision `number` plus the displayed `text`)
 - any files the syntax saves (`.sav`, `.zsav`, …)
 
-OpenSPSS runs the same `case.sps`. The golden runner compares table structure, displayed text (must be exact) and numbers (within the per-procedure tolerance). Every procedure gets cases for normal data, edge cases (empty, all-missing, ties, weights, splits, huge/tiny values) and error paths.
+Statera runs the same `case.sps`. The golden runner compares table structure, displayed text (must be exact) and numbers (within the per-procedure tolerance). Every procedure gets cases for normal data, edge cases (empty, all-missing, ties, weights, splits, huge/tiny values) and error paths.
 
 ## Architecture
 
@@ -87,14 +87,14 @@ The engine is a library. `app/`, `automation/` and the CLI are its clients, and 
 - [ ] Dialogs for the Phase 4 procedures, with live syntax preview
 
 ### Phase 6: automation and AI
-- [ ] `openspss run file.sps` batch CLI
-- [ ] MCP server (`openspss mcp`, stdio + streamable HTTP): `open_dataset`, `describe_dataset`, `get_cases`, `run_syntax`, `validate_syntax`, `explain_command`, `get_output`, `export_output`
-- [ ] Local JSON API (`openspss serve`) + thin Python client
+- [ ] `statera run file.sps` batch CLI
+- [ ] MCP server (`statera mcp`, stdio + streamable HTTP): `open_dataset`, `describe_dataset`, `get_cases`, `run_syntax`, `validate_syntax`, `explain_command`, `get_output`, `export_output`
+- [ ] Local JSON API (`statera serve`) + thin Python client
 - [ ] Optional in-app assistant: plain language → syntax (shown before running), "explain this table"
 
 ### Phase 7: first release
 - [ ] Release workflow on tag `v*`: builds on all three OSes, then attaches installers to a GitHub Release
-  - Windows: Inno Setup installer (`OpenSPSS-<ver>-setup.exe`), file associations for `.sav`/`.sps`
+  - Windows: Inno Setup installer (`Statera-<ver>-setup.exe`), file associations for `.sav`/`.sps`
   - macOS: `.app` bundle in a `.dmg` (universal or per-arch); signing/notarization once we have a cert
   - Linux: AppImage + `.deb`, desktop entry and MIME types
 - [ ] Release notes page listing every build and checksums (SHA-256)

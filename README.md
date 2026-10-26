@@ -1,16 +1,18 @@
-# OpenSPSS
+# Statera
 
-An open-source statistics package that aims to **behave exactly like IBM SPSS Statistics**: same syntax, same file formats, same numbers. It's written from scratch in [Odin](https://odin-lang.org) for speed and uses a modern [Dear ImGui](https://github.com/ocornut/imgui) interface in place of the legacy Swing look.
+*Latin for "balance, scales": an open-source, SPSS-compatible statistics package.*
 
-> **Status:** pre-alpha. Planning and reverse-engineering phase. Nothing usable yet.
+Statera aims to **behave exactly like IBM SPSS Statistics**: same syntax, same file formats, same numbers. It's written from scratch in [Odin](https://odin-lang.org) for speed and uses a modern [Dear ImGui](https://github.com/ocornut/imgui) interface in place of the legacy Swing look.
 
-> OpenSPSS is an independent project. It is not affiliated with, endorsed by, or sponsored by IBM. "IBM" and "SPSS" are trademarks of IBM Corp., used here only to describe compatibility.
+> **Status:** pre-alpha. `.sav` read/write, `GET`, `SAVE`, `COMPUTE`, `FREQUENCIES` and `DESCRIPTIVES` work, and their output matches SPSS 25 cell for cell in the golden tests.
+
+> Statera is an independent project. It is not affiliated with, endorsed by, or sponsored by IBM. "IBM" and "SPSS" are trademarks of IBM Corp., used here only to describe compatibility.
 
 ---
 
 ## Why
 
-SPSS is the default tool in many universities, hospitals and research labs. It's also expensive, closed and slow, and its UI dates from the early 2000s. OpenSPSS wants to be a drop-in replacement:
+SPSS is the default tool in many universities, hospitals and research labs. It's also expensive, closed and slow, and its UI dates from the early 2000s. Statera wants to be a drop-in replacement:
 
 - **Run your existing `.sps` syntax unchanged** and get the same results.
 - **Open and save `.sav`, `.zsav`, `.por` and `.spv`** files with full fidelity, including value labels, missing values, measurement levels and documents.
@@ -21,7 +23,7 @@ SPSS is the default tool in many universities, hospitals and research labs. It's
 
 ### What about GNU PSPP?
 
-[PSPP](https://www.gnu.org/software/pspp/) is the existing free SPSS alternative, and its documentation of the system-file formats is an excellent public reference. OpenSPSS differs in three ways: it targets full procedure coverage with numerically matched output, a modern high-performance UI, and first-class automation and AI support. We read PSPP's *documentation*. We don't copy its GPL code, so OpenSPSS can choose its own license.
+[PSPP](https://www.gnu.org/software/pspp/) is the existing free SPSS alternative, and its documentation of the system-file formats is an excellent public reference. Statera differs in three ways: it targets full procedure coverage with numerically matched output, a modern high-performance UI, and first-class automation and AI support. We read PSPP's *documentation*. We don't copy its GPL code, so Statera can choose its own license.
 
 ---
 
@@ -68,7 +70,7 @@ tests/golden/    # golden tests against reference output
 
 ## Modern UI
 
-The legacy SPSS UI is functional but cramped. OpenSPSS keeps the familiar mental model (Data View, Variable View, Syntax, Output) and modernizes how it's presented:
+The legacy SPSS UI is functional but cramped. Statera keeps the familiar mental model (Data View, Variable View, Syntax, Output) and modernizes how it's presented:
 
 - Docking workspace: arrange data, syntax and output side by side, and save layouts.
 - Dark and light themes, accent colors, crisp scalable fonts, and full high-DPI support.
@@ -82,11 +84,11 @@ The legacy SPSS UI is functional but cramped. OpenSPSS keeps the familiar mental
 
 ## AI & MCP support
 
-OpenSPSS ships an automation layer so LLM agents, notebooks and scripts can use it as a stats engine.
+Statera ships an automation layer so LLM agents, notebooks and scripts can use it as a stats engine.
 
 ### MCP server
 
-Run `openspss mcp` (stdio) or enable it in the app (streamable HTTP on localhost). Planned tools:
+Run `statera mcp` (stdio) or enable it in the app (streamable HTTP on localhost). Planned tools:
 
 | Tool | Description |
 |---|---|
@@ -103,7 +105,7 @@ Resources expose the active dataset dictionary and the output document. Prompts 
 
 ### Local API
 
-Running `openspss serve` exposes the same operations as a JSON-over-HTTP API, for Python, R or JS clients. A thin Python client (`pip install openspss`) is planned, so `import openspss` covers the common `spss` module workflows.
+Running `statera serve` exposes the same operations as a JSON-over-HTTP API, for Python, R or JS clients. A thin Python client (`pip install statera`) is planned, so `import statera` covers the common `spss` module workflows.
 
 ### In-app assistant (optional, bring your own key)
 
@@ -132,7 +134,7 @@ The detailed, living plan is in [`docs/PLAN.md`](docs/PLAN.md).
 
 ## Clean-room reverse engineering
 
-OpenSPSS learns how SPSS *behaves* using [rea](https://github.com/morluto/rea), an MCP server for reverse engineering. It never ships or transliterates IBM code. The process is in [AGENTS.md](AGENTS.md#clean-room-reverse-engineering). In short:
+Statera learns how SPSS *behaves* using [rea](https://github.com/morluto/rea), an MCP server for reverse engineering. It never ships or transliterates IBM code. The process is in [AGENTS.md](AGENTS.md#clean-room-reverse-engineering). In short:
 
 1. **Analysts** observe behavior (black-box runs, file-format inspection, static analysis) and write **specs in their own words** in `docs/specs/`.
 2. **Implementers** write Odin code from those specs, public literature, and IBM's published algorithm documentation.
@@ -146,7 +148,7 @@ Reverse engineering for interoperability is lawful in many jurisdictions but res
 
 | Dark | Light |
 |---|---|
-| ![OpenSPSS dark theme](docs/images/ui-dark.png) | ![OpenSPSS light theme](docs/images/ui-light.png) |
+| ![Statera dark theme](docs/images/ui-dark.png) | ![Statera light theme](docs/images/ui-light.png) |
 
 The theme follows your OS by default. Switch it with the System / Light / Dark control in the menu bar or with `Ctrl+Shift+T`.
 
@@ -156,11 +158,11 @@ Requirements: the [Odin compiler](https://odin-lang.org/docs/install/) (dev-2026
 
 ```powershell
 scripts/setup_imgui.ps1     # once: fetch and build Dear ImGui bindings into vendor/imgui
-scripts/build.ps1           # build/openspss.exe (add -Release for an optimized, console-less build)
+scripts/build.ps1           # build/statera.exe (add -Release for an optimized, console-less build)
 scripts/gate.ps1            # checks + tests; run before every push
 ```
 
-`build/openspss.exe [file.sav] [--light|--dark]` opens a data file. You can also drag a `.sav` onto the window. Linux and macOS build scripts will follow with the release pipeline.
+`build/statera.exe [file.sav] [--light|--dark]` opens a data file. You can also drag a `.sav` onto the window. Linux and macOS build scripts will follow with the release pipeline.
 
 ## Contributing
 

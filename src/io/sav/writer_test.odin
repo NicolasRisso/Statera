@@ -18,7 +18,7 @@ round_trip :: proc(t: ^testing.T, compression: Compression) {
 	data, werr := write(&original, compression, alloc)
 	if !testing.expect_value(t, werr, nil) { return }
 
-	if out_dir, ok := os.lookup_env("OPENSPSS_WRITE_SAMPLES", context.temp_allocator); ok {
+	if out_dir, ok := os.lookup_env("STATERA_WRITE_SAMPLES", context.temp_allocator); ok {
 		name := "rt_bytecode.sav" if compression == .Bytecode else "rt_uncompressed.sav"
 		_ = os.write_entire_file(strings.concatenate({out_dir, "/", name}, context.temp_allocator), data)
 	}

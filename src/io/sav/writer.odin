@@ -7,7 +7,7 @@ import "core:math"
 import "core:strings"
 import "core:time"
 
-PRODUCT :: "@(#) SPSS DATA FILE OpenSPSS"
+PRODUCT :: "@(#) SPSS DATA FILE Statera"
 
 @(private = "file")
 MONTHS := [12]string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}

@@ -3,7 +3,7 @@
 Run with the Python bundled with SPSS:
     "C:\\Program Files\\IBM\\SPSS\\Statistics\\25\\Python3\\python.exe" scripts/golden/spss_reads.py file.sav [...]
 
-Used to verify files written by OpenSPSS. Must stay compatible with Python 3.4.
+Used to verify files written by Statera. Must stay compatible with Python 3.4.
 """
 import sys
 
