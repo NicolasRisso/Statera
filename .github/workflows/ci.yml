@@ -18,6 +18,11 @@ jobs:
         with:
           release: dev-2026-09
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Fetch ImGui bindings (pinned, same commit as scripts/setup_imgui.ps1)
+        shell: bash
+        run: |
+          git clone --quiet https://gitlab.com/L-4/odin-imgui.git vendor/imgui
+          git -C vendor/imgui checkout --quiet a116eb1ceaa6acde60219efdd56bf6c2e1aedf4c
       - name: Gate (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
