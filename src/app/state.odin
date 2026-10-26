@@ -38,9 +38,14 @@ App :: struct {
 DEFAULT_SYNTAX :: `* Statera syntax editor. Ctrl+Enter runs everything against the active dataset.
 COMPUTE income_k = income / 1000.
 COMPUTE high_score = score >= 80.
-FREQUENCIES VARIABLES=group region satisfaction.
-DESCRIPTIVES age score income_k high_score /STATISTICS=MEAN STDDEV MIN MAX SKEWNESS.
-FREQUENCIES score /FORMAT=NOTABLE /STATISTICS=MEDIAN MODE.
+CROSSTABS /TABLES=group BY high_score /CELLS=COUNT ROW EXPECTED /STATISTICS=CHISQ PHI.
+SORT CASES BY group.
+SPLIT FILE LAYERED BY group.
+DESCRIPTIVES age score income_k /STATISTICS=MEAN STDDEV MIN MAX SKEWNESS.
+SPLIT FILE OFF.
+TEMPORARY.
+SELECT IF (age < 30).
+FREQUENCIES VARIABLES=satisfaction /STATISTICS=MEDIAN MODE.
 `
 
 app_init :: proc(app: ^App) {

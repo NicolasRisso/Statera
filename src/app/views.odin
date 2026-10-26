@@ -331,7 +331,7 @@ draw_syntax :: proc(app: ^App) {
 
 	if im.Button("▶ Run  (Ctrl+Enter)") { run_editor(app) }
 	im.SameLine()
-	text_colored(palette.dim, "Supported: GET, SAVE, COMPUTE, EXECUTE, FREQUENCIES, DESCRIPTIVES")
+	text_colored(palette.dim, "GET SAVE COMPUTE SELECT IF FILTER WEIGHT SORT CASES SPLIT FILE TEMPORARY · FREQUENCIES DESCRIPTIVES CROSSTABS")
 
 	im.PushFontFloat(app.fonts.mono, 0)
 	im.PushStyleColorImVec4(.FrameBg, palette.bg)
@@ -443,6 +443,19 @@ draw_pivot_table :: proc(t: ^output.Table) {
 	}
 
 	text_colored(palette.text, t.title)
+	for c in t.captions { text_colored(palette.dim, c) }
+	// Single-category layers (e.g. CROSSTABS "Count") are shown as a subtitle.
+	if len(t.cells) > 0 && len(t.cells[0].layer) > 0 {
+		text_colored(palette.dim, strings.join(t.cells[0].layer, " / ", context.temp_allocator))
+	}
+	// Footnotes on labels share the cell footnote lettering.
+	note_mark :: proc(notes: ^[dynamic]string, note: string) -> rune {
+		for existing, k in notes {
+			if existing == note { return 'a' + rune(k) }
+		}
+		append(notes, note)
+		return 'a' + rune(len(notes) - 1)
+	}
 	n_cols := row_depth + len(cols)
 	// ScrollX keeps columns at their natural width (scrolling when the pane is narrow); it
 	// needs an explicit height, so size the table to its rows.
@@ -471,7 +484,11 @@ draw_pivot_table :: proc(t: ^output.Table) {
 				im.TableNextColumn()
 				if level >= len(r) { continue }
 				if ri > 0 && level < len(rows[ri - 1]) && slice_prefix_equal(rows[ri - 1], r, level + 1) { continue }
-				im.TextUnformatted(cstr(r[level]))
+				label := r[level]
+				for n in t.label_notes {
+					if n.label == label { label = fmt.tprintf("%s%c", label, note_mark(&notes, n.text)) }
+				}
+				im.TextUnformatted(cstr(label))
 			}
 			for _, ci in cols {
 				im.TableNextColumn()
@@ -479,12 +496,7 @@ draw_pivot_table :: proc(t: ^output.Table) {
 				if cell == nil { continue }
 				text := cell.text
 				for note in cell.footnotes {
-					mark := len(notes)
-					for existing, k in notes {
-						if existing == note { mark = k }
-					}
-					if mark == len(notes) { append(&notes, note) }
-					text = fmt.tprintf("%s%c", text, 'a' + rune(mark))
+					text = fmt.tprintf("%s%c", text, note_mark(&notes, note))
 				}
 				// Right-align numbers like SPSS.
 				w := im.CalcTextSize(cstr(text)).x
