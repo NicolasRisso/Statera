@@ -146,4 +146,4 @@ Read [AGENTS.md](AGENTS.md) first. It contains the rules for both humans and AI 
 
 ## License
 
-To be decided before the first code release.
+[Apache License 2.0](LICENSE).
