@@ -21,8 +21,9 @@ Cell :: struct {
 Table :: struct {
 	command: string, // OMS command name, e.g. "Descriptives"
 	subtype: string, // OMS subType, e.g. "Descriptive Statistics"
-	title:   string,
-	cells:   [dynamic]Cell,
+	title:    string,
+	captions: []string, // table-level notes, e.g. the split group under SPLIT FILE SEPARATE
+	cells:    [dynamic]Cell,
 }
 
 Text_Kind :: enum u8 {
