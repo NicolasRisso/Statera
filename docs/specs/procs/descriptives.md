@@ -24,7 +24,8 @@ Sources: Command Syntax Reference (public); standard moment formulas; black-box 
 - range = max − min
 
 ## Edge cases
-- Statistics that are undefined for small n (variance at n < 2, skewness at n < 3, kurtosis at n < 4) display as blank cells. *(Not yet golden-verified.)*
+- A variable with no valid values has only its N cell (0). The other statistic cells are absent, not blank (golden: compute_basic `div0`).
+- Statistics undefined for small n (variance at n < 2, skewness at n < 3, kurtosis at n < 4) are assumed to be absent too. *(Not yet golden-verified.)*
 
 ## Open questions
 - Weighted cases (WEIGHT BY), Z-score saving (/SAVE), /SORT and /MISSING=LISTWISE.

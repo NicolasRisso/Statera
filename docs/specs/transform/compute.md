@@ -20,6 +20,8 @@ Binary operators of the same level associate left to right. Relational and logic
 ## Missing values
 - User-missing values of a variable are treated as missing in expressions (they become SYSMIS), except inside `VALUE(var)`.
 - Arithmetic, relational operators and most functions with a missing operand yield SYSMIS.
+- **Exceptions (golden-verified):** `0 * missing = 0`, `0 / missing = 0`, `MOD(0, missing) = 0`. But `missing ** 0` is SYSMIS.
+- `-2 ** 2 = -4`, because `**` binds tighter than unary minus.
 - **Logical operators use three-valued logic:** `0 AND missing = 0`, `1 OR missing = 1`, and otherwise missing → SYSMIS. `NOT missing = SYSMIS`.
 - Division by zero → SYSMIS with **warning 511**. SQRT of a negative → SYSMIS with **warning 603**. LN/LG10 of x ≤ 0 → SYSMIS (with a warning). A `**` result that isn't real → SYSMIS.
 

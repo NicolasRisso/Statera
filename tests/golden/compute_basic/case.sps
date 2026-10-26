@@ -22,6 +22,11 @@ COMPUTE both = age > 40 AND score > 70.
 COMPUTE either = age > 40 OR rating >= 4.
 COMPUTE neg = NOT (sex = 1).
 COMPUTE noteq = grp <> 2 & grp ~= 3.
+COMPUTE zmul = (sex - sex) * score.
+COMPUTE zdiv = (sex - sex) / score.
+COMPUTE pow0 = score ** 0.
+COMPUTE zmod = MOD(sex - sex, score).
+COMPUTE negpow = -2 ** 2.
 COMPUTE age = age + 1.
 SAVE OUTFILE='@OUT@/computed.sav'.
-DESCRIPTIVES score_pct age_sq z m m2 s r t root lg md ab mn nv miss raw div0 older both either neg noteq age.
+DESCRIPTIVES score_pct age_sq z m m2 s r t root lg md ab mn nv miss raw div0 older both either neg noteq zmul zdiv pow0 zmod negpow age.
