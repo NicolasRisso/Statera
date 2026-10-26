@@ -11,6 +11,7 @@ NO_DECIMALS :: -1
 Cell :: struct {
 	row:       []string, // category labels from outermost to innermost
 	col:       []string,
+	layer:     []string,
 	text:      string,
 	number:    f64,
 	has_value: bool,
@@ -22,8 +23,15 @@ Table :: struct {
 	command: string, // OMS command name, e.g. "Descriptives"
 	subtype: string, // OMS subType, e.g. "Descriptive Statistics"
 	title:    string,
-	captions: []string, // table-level notes, e.g. the split group under SPLIT FILE SEPARATE
-	cells:    [dynamic]Cell,
+	captions:    []string, // table-level notes, e.g. the split group under SPLIT FILE SEPARATE
+	label_notes: [dynamic]Label_Note,
+	cells:       [dynamic]Cell,
+}
+
+// A footnote attached to a row/column label rather than a cell.
+Label_Note :: struct {
+	label: string,
+	text:  string,
 }
 
 Text_Kind :: enum u8 {
@@ -45,16 +53,23 @@ Item :: union {
 }
 
 // All strings handed to these procs are cloned with context.allocator.
-add_number :: proc(t: ^Table, row, col: []string, x: f64, decimals: int, footnotes: []string = nil) {
+add_number :: proc(t: ^Table, row, col: []string, x: f64, decimals: int, footnotes: []string = nil, layer: []string = nil, percent := false) {
+	text := format_number(x, decimals)
+	if percent { text = strings.concatenate({text, "%"}) }
 	append(&t.cells, Cell {
 		row       = clone_path(row),
 		col       = clone_path(col),
-		text      = format_number(x, decimals),
+		layer     = clone_path(layer),
+		text      = text,
 		number    = x,
 		has_value = true,
 		decimals  = decimals,
 		footnotes = clone_path(footnotes),
 	})
+}
+
+add_label_note :: proc(t: ^Table, label, text: string) {
+	append(&t.label_notes, Label_Note{strings.clone(label), strings.clone(text)})
 }
 
 add_text :: proc(t: ^Table, row, col: []string, text: string) {
