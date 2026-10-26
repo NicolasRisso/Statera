@@ -80,6 +80,12 @@ statistics_table :: proc(ctx: ^Context, groups: []Group, layered: bool, vars: []
 		{.Range, "Range"}, {.Min, "Minimum"}, {.Max, "Maximum"}, {.Sum, "Sum"},
 	}
 	file := ctx.file
+	// With a single variable SPSS puts it in the layer dimension instead of the columns.
+	place :: proc(single: bool, title: string) -> (col, layer: []string) {
+		if single { return nil, path(nil, title) }
+		return path(nil, title), nil
+	}
+	single := len(vars) == 1
 	for &g in groups {
 		prefix := g.labels if layered else nil
 		total := total_weight(&g)
@@ -87,12 +93,14 @@ statistics_table :: proc(ctx: ^Context, groups: []Group, layered: bool, vars: []
 		for vi in vars {
 			v := &file.variables[vi]
 			_, ws := valid_values(ctx, &g, v)
-			output.add_number(&t, path(prefix, "N", "Valid"), {var_title(v)}, sum(ws), output.NO_DECIMALS)
+			col, layer := place(single, var_title(v))
+			output.add_number(&t, path(prefix, "N", "Valid"), col, sum(ws), output.NO_DECIMALS, layer = layer)
 		}
 		for vi in vars {
 			v := &file.variables[vi]
 			_, ws := valid_values(ctx, &g, v)
-			output.add_number(&t, path(prefix, "N", "Missing"), {var_title(v)}, total - sum(ws), output.NO_DECIMALS)
+			col, layer := place(single, var_title(v))
+			output.add_number(&t, path(prefix, "N", "Missing"), col, total - sum(ws), output.NO_DECIMALS, layer = layer)
 		}
 		for o in order {
 			if o.stat not_in stats { continue }
@@ -101,25 +109,26 @@ statistics_table :: proc(ctx: ^Context, groups: []Group, layered: bool, vars: []
 				xs, ws := valid_values(ctx, &g, v)
 				s := summarize(xs, ws)
 				d := int(v.print.decimals)
-				row, col := path(prefix, o.name), path(nil, var_title(v))
+				row := path(prefix, o.name)
+				col, layer := place(single, var_title(v))
 				switch o.stat {
-				case .Mean:     add_stat(&t, row, col, s.mean, d + 2)
-				case .Semean:   add_stat(&t, row, col, s.se_mean, d + 3)
-				case .Median:   add_stat(&t, row, col, percentile(xs, ws, 0.5), d + 2)
-				case .Stddev:   add_stat(&t, row, col, math.sqrt(s.variance), d + 3)
-				case .Variance: add_stat(&t, row, col, s.variance, 3)
-				case .Skewness: add_stat(&t, row, col, s.skewness, 3)
-				case .Seskew:   add_stat(&t, row, col, s.se_skew, 3)
-				case .Kurtosis: add_stat(&t, row, col, s.kurtosis, 3)
-				case .Sekurt:   add_stat(&t, row, col, s.se_kurt, 3)
-				case .Range:    add_stat(&t, row, col, s.max - s.min, d)
-				case .Min:      add_stat(&t, row, col, s.min, d)
-				case .Max:      add_stat(&t, row, col, s.max, d)
-				case .Sum:      add_stat(&t, row, col, s.sum, d)
+				case .Mean:     add_stat(&t, row, col, s.mean, d + 2, layer)
+				case .Semean:   add_stat(&t, row, col, s.se_mean, d + 3, layer)
+				case .Median:   add_stat(&t, row, col, percentile(xs, ws, 0.5), d + 2, layer)
+				case .Stddev:   add_stat(&t, row, col, math.sqrt(s.variance), d + 3, layer)
+				case .Variance: add_stat(&t, row, col, s.variance, 3, layer)
+				case .Skewness: add_stat(&t, row, col, s.skewness, 3, layer)
+				case .Seskew:   add_stat(&t, row, col, s.se_skew, 3, layer)
+				case .Kurtosis: add_stat(&t, row, col, s.kurtosis, 3, layer)
+				case .Sekurt:   add_stat(&t, row, col, s.se_kurt, 3, layer)
+				case .Range:    add_stat(&t, row, col, s.max - s.min, d, layer)
+				case .Min:      add_stat(&t, row, col, s.min, d, layer)
+				case .Max:      add_stat(&t, row, col, s.max, d, layer)
+				case .Sum:      add_stat(&t, row, col, s.sum, d, layer)
 				case .Mode:
 					mode, multiple := find_mode(xs, ws)
 					if math.is_nan(mode) { continue }
-					output.add_number(&t, row, col, mode, d, {MULTIPLE_MODES} if multiple else nil)
+					output.add_number(&t, row, col, mode, d, {MULTIPLE_MODES} if multiple else nil, layer = layer)
 				}
 			}
 		}

@@ -84,7 +84,7 @@ descriptives_group :: proc(t: ^output.Table, ctx: ^Context, g: ^Group, prefix: [
 
 // Undefined statistics (NaN) produce no cell at all, as in SPSS (golden: compute_basic, div0).
 @(private)
-add_stat :: proc(t: ^output.Table, row, col: []string, x: f64, decimals: int) {
+add_stat :: proc(t: ^output.Table, row, col: []string, x: f64, decimals: int, layer: []string = nil) {
 	if math.is_nan(x) { return }
-	output.add_number(t, row, col, x, decimals)
+	output.add_number(t, row, col, x, decimals, layer = layer)
 }
