@@ -1,0 +1,14 @@
+* SPLIT FILE: layered, separate, two split variables, OFF; SORT CASES.
+GET FILE='@ROOT@/tests/golden/data/expected/survey.sav'.
+SORT CASES BY sex.
+SPLIT FILE LAYERED BY sex.
+FREQUENCIES VARIABLES=grp /STATISTICS=MEAN.
+DESCRIPTIVES age score.
+SPLIT FILE SEPARATE BY sex.
+DESCRIPTIVES age.
+FREQUENCIES VARIABLES=rating.
+SPLIT FILE OFF.
+DESCRIPTIVES age.
+SORT CASES BY grp (D) sex.
+SPLIT FILE BY grp sex.
+DESCRIPTIVES age.

@@ -1,0 +1,18 @@
+* FILTER, SELECT IF and TEMPORARY scoping.
+GET FILE='@ROOT@/tests/golden/data/expected/survey.sav'.
+COMPUTE young = age < 40.
+FILTER BY young.
+FREQUENCIES VARIABLES=grp.
+DESCRIPTIVES age score.
+FILTER OFF.
+DESCRIPTIVES age.
+TEMPORARY.
+SELECT IF (sex = 2).
+DESCRIPTIVES age score.
+DESCRIPTIVES age.
+TEMPORARY.
+WEIGHT BY wgt.
+DESCRIPTIVES age.
+DESCRIPTIVES age.
+SELECT IF (grp <> 3).
+FREQUENCIES VARIABLES=grp sex.
