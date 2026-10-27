@@ -4,7 +4,7 @@
 
 Statera aims to **behave exactly like IBM SPSS Statistics**: same syntax, same file formats, same numbers. It's written from scratch in [Odin](https://odin-lang.org) for speed and uses a modern [Dear ImGui](https://github.com/ocornut/imgui) interface in place of the legacy Swing look.
 
-> **Status:** pre-alpha. `.sav` read/write; `GET`, `SAVE`, `COMPUTE`, `SELECT IF`, `FILTER`, `WEIGHT`, `SORT CASES`, `SPLIT FILE` and `TEMPORARY`; and `FREQUENCIES`, `DESCRIPTIVES`, `CROSSTABS`, `MEANS`, `T-TEST` and `ONEWAY` all work. Their output matches SPSS 25 cell for cell in the golden tests, weighted and split included.
+> **Status:** pre-alpha. `.sav` read/write; `GET`, `SAVE`, `COMPUTE`, `SELECT IF`, `FILTER`, `WEIGHT`, `SORT CASES`, `SPLIT FILE` and `TEMPORARY`; and `FREQUENCIES`, `DESCRIPTIVES`, `CROSSTABS`, `MEANS`, `T-TEST`, `ONEWAY`, `CORRELATIONS` and linear `REGRESSION` all work. Their output matches SPSS 25 cell for cell in the golden tests, weighted and split included.
 
 > Statera is an independent project. It is not affiliated with, endorsed by, or sponsored by IBM. "IBM" and "SPSS" are trademarks of IBM Corp., used here only to describe compatibility.
 
@@ -156,8 +156,7 @@ The theme follows your OS by default. Switch it with the System / Light / Dark c
 
 Download the installer for your system from the [Releases](../../releases) page:
 - **Windows:** `…-windows-x64-setup.exe`, or the portable `.zip`.
-- **macOS (Apple Silicon):** `…-macos-arm64.dmg`.
-- **Linux:** `…-linux-x86_64.AppImage`, or the `.deb` for Debian/Ubuntu.
+- **macOS and Linux:** no prebuilt packages yet. Build from source (below); `scripts/package_macos.sh` and `scripts/package_linux.sh` make a `.dmg` or an AppImage/`.deb`.
 
 Preview builds are unsigned, and the release notes explain the first-launch steps.
 
@@ -180,7 +179,7 @@ SDL_PREFIX="$HOME/sdl3" sh scripts/build.sh      # build/statera
 sh scripts/gate.sh
 ```
 
-`statera [file.sav] [--light|--dark]` opens a data file, and you can also drag a `.sav` onto the window. Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed. Run that workflow manually for a dry run that builds the artifacts without publishing.
+`statera [file.sav] [--light|--dark]` opens a data file, and you can also drag a `.sav` onto the window. Windows releases are built locally: `scripts/build.ps1 -Release -Version vX.Y.Z`, then Inno Setup's `ISCC /DAppVersion=X.Y.Z installer\windows\statera.iss`, then `gh release create`. The `.github/workflows/release.yml` workflow (manual only, for now) builds all three platforms.
 
 ## Contributing
 
