@@ -27,6 +27,9 @@ ROOT :: #directory + "/../.."
 @(test) test_ctx_split :: proc(t: ^testing.T) { run_case(t, "ctx_split") }
 @(test) test_xtab_basic :: proc(t: ^testing.T) { run_case(t, "xtab_basic") }
 @(test) test_xtab_stats :: proc(t: ^testing.T) { run_case(t, "xtab_stats") }
+@(test) test_means_basic :: proc(t: ^testing.T) { run_case(t, "means_basic") }
+@(test) test_ttest_basic :: proc(t: ^testing.T) { run_case(t, "ttest_basic") }
+@(test) test_oneway_basic :: proc(t: ^testing.T) { run_case(t, "oneway_basic") }
 
 Flat_Cell :: struct {
 	row, col, layer: string, // paths joined with " / "
@@ -109,6 +112,30 @@ compare_tables :: proc(t: ^testing.T, ours, theirs: []Flat_Table) {
 	}
 }
 
+// core:encoding/xml collapses whitespace inside attribute values, so labels with SPSS's
+// padding (e.g. "Test Value = 70" + 38 spaces, "Exam score  * Study group") are compared
+// whitespace-normalized on both sides. Our output still emits the exact padding.
+normalize_ws :: proc(s: string) -> string {
+	b := strings.builder_make(context.temp_allocator)
+	space := false
+	for r in strings.trim_space(s) {
+		if r == ' ' {
+			space = true
+			continue
+		}
+		if space { strings.write_byte(&b, ' ') }
+		space = false
+		strings.write_rune(&b, r)
+	}
+	return strings.to_string(b)
+}
+
+join_path :: proc(p: []string) -> string {
+	parts := make([]string, len(p), context.temp_allocator)
+	for s, i in p { parts[i] = normalize_ws(s) }
+	return strings.join(parts, " / ", context.temp_allocator)
+}
+
 close_enough :: proc(a, b: f64) -> bool {
 	// OMS stores 14 significant digits.
 	return abs(a - b) <= 1e-11 * max(abs(a), abs(b), 1e-300) || abs(a - b) < 1e-12
@@ -131,9 +158,9 @@ flatten_ours :: proc(items: []output.Item) -> [dynamic]Flat_Table {
 		}
 		for c in table.cells {
 			append(&ft.cells, Flat_Cell {
-				row       = strings.join(c.row, " / ", context.temp_allocator),
-				col       = strings.join(c.col, " / ", context.temp_allocator),
-				layer     = strings.join(c.layer, " / ", context.temp_allocator),
+				row       = join_path(c.row),
+				col       = join_path(c.col),
+				layer     = join_path(c.layer),
 				text      = c.text,
 				number    = c.number,
 				has_value = c.has_value,
@@ -223,9 +250,9 @@ walk_oms :: proc(doc: ^xml.Document, id: xml.Element_ID, tables: ^[dynamic]Flat_
 		notes := make([dynamic]string, context.temp_allocator)
 		collect_notes(doc, id, &notes)
 		append(&table.cells, Flat_Cell {
-			row       = strings.join(path.row[:], " / ", context.temp_allocator),
-			col       = strings.join(path.col[:], " / ", context.temp_allocator),
-			layer     = strings.join(path.layer[:], " / ", context.temp_allocator),
+			row       = join_path(path.row[:]),
+			col       = join_path(path.col[:]),
+			layer     = join_path(path.layer[:]),
 			text      = attr(e, "text"),
 			number    = value,
 			has_value = has_value && number != "",
