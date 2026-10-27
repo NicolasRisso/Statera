@@ -21,6 +21,8 @@ Command :: struct {
 @(private)
 COMMANDS := [?]Command {
 	{name = "COMPUTE", run = cmd_compute},
+	{name = "CORRELATIONS", run = cmd_correlations, procedure = true},
+	{name = "REGRESSION", run = cmd_regression, procedure = true},
 	{name = "CROSSTABS", run = cmd_crosstabs, procedure = true},
 	{name = "DESCRIPTIVES", run = cmd_descriptives, procedure = true},
 	{name = "EXECUTE", run = proc(s: ^Session, c: ^Cmd) -> bool { return true }, procedure = true},
@@ -549,6 +551,134 @@ cmd_oneway :: proc(s: ^Session, c: ^Cmd) -> bool {
 	}
 	ctx := make_context(c)
 	procs.oneway(&ctx, deps[:], factor[0], opts, &s.items)
+	return true
+}
+
+@(private)
+cmd_correlations :: proc(s: ^Session, c: ^Cmd) -> bool {
+	need_data(c) or_return
+	opts: procs.Corr_Options
+	rows, cols: [dynamic]int
+	first := true
+	for !at_end(c) {
+		slash := accept_kind(c, .Slash)
+		switch {
+		case accept_keyword(c, "VARIABLES") || (first && !slash):
+			accept_kind(c, .Equals)
+			rows = parse_varlist(c) or_return
+			if accept_keyword(c, "WITH") { cols = parse_varlist(c) or_return }
+		case accept_keyword(c, "PRINT"):
+			accept_kind(c, .Equals)
+			for !at_subcommand_end(c) {
+				switch {
+				case accept_keyword(c, "ONETAIL"): opts.one_tailed = true
+				case accept_keyword(c, "TWOTAIL"): opts.one_tailed = false
+				case accept_keyword(c, "NOSIG"):   opts.flag = true
+				case accept_keyword(c, "SIG"):     opts.flag = false
+				case:
+					t, _ := peek(c)
+					return fail(c, "unknown PRINT keyword %s", t.text)
+				}
+			}
+		case accept_keyword(c, "STATISTICS"):
+			accept_kind(c, .Equals)
+			for !at_subcommand_end(c) {
+				switch {
+				case accept_keyword(c, "DESCRIPTIVES"): opts.descriptives = true
+				case accept_keyword(c, "XPROD"):        opts.xprod = true
+				case accept_keyword(c, "ALL"):          opts.descriptives, opts.xprod = true, true
+				case:
+					t, _ := peek(c)
+					return fail(c, "unknown statistic %s", t.text)
+				}
+			}
+		case accept_keyword(c, "MISSING"):
+			accept_kind(c, .Equals)
+			for !at_subcommand_end(c) {
+				switch {
+				case accept_keyword(c, "LISTWISE"): opts.listwise = true
+				case accept_keyword(c, "PAIRWISE"): opts.listwise = false
+				case:
+					t, _ := peek(c)
+					return fail(c, "unsupported MISSING keyword %s", t.text)
+				}
+			}
+		case:
+			t, _ := peek(c)
+			return fail(c, "subcommand %s is not implemented yet", t.text)
+		}
+		first = false
+	}
+	if len(rows) == 0 { return fail(c, "no variables") }
+	ctx := make_context(c)
+	procs.correlations(&ctx, rows[:], cols[:], opts, &s.items)
+	return true
+}
+
+@(private)
+cmd_regression :: proc(s: ^Session, c: ^Cmd) -> bool {
+	need_data(c) or_return
+	opts := procs.Reg_Options{ci_level = 95}
+	deps, entered: [dynamic]int
+	for !at_end(c) {
+		accept_kind(c, .Slash)
+		switch {
+		case accept_keyword(c, "DESCRIPTIVES"):
+			accept_kind(c, .Equals)
+			if at_subcommand_end(c) { opts.descriptives, opts.corr = true, true }
+			for !at_subcommand_end(c) {
+				switch {
+				case accept_keyword(c, "MEAN"), accept_keyword(c, "STDDEV"), accept_keyword(c, "N"):
+					opts.descriptives = true
+				case accept_keyword(c, "CORR"), accept_keyword(c, "SIG"):
+					opts.corr = true
+				case accept_keyword(c, "DEFAULTS"):
+					opts.descriptives, opts.corr = true, true
+				case:
+					t, _ := peek(c)
+					return fail(c, "unsupported DESCRIPTIVES keyword %s", t.text)
+				}
+			}
+		case accept_keyword(c, "STATISTICS"):
+			accept_kind(c, .Equals)
+			for !at_subcommand_end(c) {
+				switch {
+				case accept_keyword(c, "CI"):
+					opts.ci = true
+					if accept_kind(c, .L_Paren) {
+						t, ok := peek(c)
+						if !ok || t.kind != .Number { return fail(c, "expected a confidence level") }
+						opts.ci_level = t.number
+						c.pos += 1
+						if !accept_kind(c, .R_Paren) { return fail(c, "expected )") }
+					}
+				case accept_keyword(c, "COEFF"), accept_keyword(c, "OUTS"), accept_keyword(c, "R"),
+				     accept_keyword(c, "ANOVA"), accept_keyword(c, "DEFAULTS"):
+				case:
+					t, _ := peek(c)
+					return fail(c, "unsupported statistic %s", t.text)
+				}
+			}
+		case accept_keyword(c, "DEPENDENT"):
+			accept_kind(c, .Equals)
+			deps = parse_varlist(c) or_return
+		case accept_keyword(c, "METHOD"):
+			accept_kind(c, .Equals)
+			if !accept_keyword(c, "ENTER") { return fail(c, "only METHOD=ENTER is implemented so far") }
+			if len(entered) > 0 { return fail(c, "multiple METHOD blocks are not implemented yet") }
+			entered = parse_varlist(c) or_return
+		case accept_keyword(c, "MISSING"), accept_keyword(c, "CRITERIA"), accept_keyword(c, "NOORIGIN"):
+			for !at_subcommand_end(c) { c.pos += 1 }
+		case:
+			t, _ := peek(c)
+			return fail(c, "subcommand %s is not implemented yet", t.text)
+		}
+	}
+	if len(deps) == 0 || len(entered) == 0 { return fail(c, "needs /DEPENDENT and /METHOD=ENTER") }
+	ctx := make_context(c)
+	for d in deps {
+		if ok, msg := procs.regression(&ctx, d, entered[:], opts, &s.items); !ok { return fail(c, "%s", msg) }
+	}
 	return true
 }
 
