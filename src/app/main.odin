@@ -76,6 +76,8 @@ main :: proc() {
 			set_theme_mode(app, .Dark, save = false)
 		case "--run":
 			run_editor(app)
+		case "--export":
+			if i + 1 < len(os.args) { export_output(app, os.args[i + 1]); i += 1 }
 		case "--screenshot":
 			if i + 1 < len(os.args) { screenshot_path = os.args[i + 1]; i += 1 }
 		case:
@@ -102,8 +104,12 @@ main :: proc() {
 				open_dataset(app, string(e.drop.data))
 			}
 		}
-		if path, ok := take_pending_open(app); ok {
-			open_dataset(app, path)
+		if action, path, ok := take_pending(app); ok {
+			switch action {
+			case .Open:          open_dataset(app, path)
+			case .Save_Data:     save_dataset(app, path)
+			case .Export_Output: export_output(app, path)
+			}
 			delete(path)
 		}
 
@@ -119,7 +125,7 @@ main :: proc() {
 		gl.ClearColor(bg.x, bg.y, bg.z, 1)
 		gl.Clear(gl.COLOR_BUFFER_BIT)
 		imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
-		if screenshot_path != "" && frame == 20 {
+		if screenshot_path != "" && frame == 150 { // late enough for a settled frame-time average
 			save_screenshot(screenshot_path, io.DisplaySize * io.DisplayFramebufferScale)
 			app.running = false
 		}
@@ -163,6 +169,9 @@ handle_shortcuts :: proc(app: ^App) {
 	chord :: proc(key: im.Key) -> im.KeyChord { return CTRL | i32(key) }
 	if im.Shortcut(chord(.K), {.RouteGlobal}) { app.palette_open = true }
 	if im.Shortcut(chord(.O), {.RouteGlobal}) { show_open_dialog(app) }
+	if im.Shortcut(chord(.S), {.RouteGlobal}) { save_or_ask(app) }
+	if im.Shortcut(CTRL | i32(im.Key.ImGuiMod_Shift) | i32(im.Key.S), {.RouteGlobal}) { show_save_dialog(app) }
+	if im.Shortcut(chord(.E), {.RouteGlobal}) { show_export_dialog(app) }
 	if im.Shortcut(chord(.L), {.RouteGlobal}) { app.show_labels = !app.show_labels }
 	if im.Shortcut(chord(.Q), {.RouteGlobal}) { app.running = false }
 	if im.Shortcut(chord(.Enter), {.RouteGlobal}) { run_editor(app) }
@@ -177,7 +186,51 @@ show_open_dialog :: proc(app: ^App) {
 	callback :: proc "c" (userdata: rawptr, files: [^]cstring, filter: i32) {
 		context = runtime.default_context()
 		if files == nil || files[0] == nil { return }
-		request_open((^App)(userdata), string(files[0]))
+		request_file((^App)(userdata), .Open, string(files[0]))
 	}
 	sdl.ShowOpenFileDialog(callback, app, sdl.GL_GetCurrentWindow(), &filters[0], len(filters), nil, false)
+}
+
+// Ctrl+S: save to the current file, or ask where when there is none (e.g. the demo dataset).
+save_or_ask :: proc(app: ^App) {
+	if app.data_path != "" {
+		save_dataset(app, app.data_path)
+	} else {
+		show_save_dialog(app)
+	}
+}
+
+show_save_dialog :: proc(app: ^App) {
+	@(static) filters := [?]sdl.DialogFileFilter{{name = "SPSS data file", pattern = "sav"}}
+	callback :: proc "c" (userdata: rawptr, files: [^]cstring, filter: i32) {
+		context = runtime.default_context()
+		if files == nil || files[0] == nil { return }
+		path := string(files[0])
+		if !strings.has_suffix(strings.to_lower(path, context.temp_allocator), ".sav") {
+			path = strings.concatenate({path, ".sav"}, context.temp_allocator)
+		}
+		request_file((^App)(userdata), .Save_Data, path)
+	}
+	sdl.ShowSaveFileDialog(callback, app, sdl.GL_GetCurrentWindow(), &filters[0], len(filters), nil)
+}
+
+show_export_dialog :: proc(app: ^App) {
+	@(static) filters := [?]sdl.DialogFileFilter {
+		{name = "Web page (HTML)", pattern = "html"},
+		{name = "Excel workbook (XLSX)", pattern = "xlsx"},
+		{name = "CSV", pattern = "csv"},
+	}
+	callback :: proc "c" (userdata: rawptr, files: [^]cstring, filter: i32) {
+		context = runtime.default_context()
+		if files == nil || files[0] == nil { return }
+		path := string(files[0])
+		// Add the chosen filter's extension when the name has none of ours.
+		exts := [3]string{".html", ".xlsx", ".csv"}
+		lower := strings.to_lower(path, context.temp_allocator)
+		has_ext := false
+		for e in exts { has_ext ||= strings.has_suffix(lower, e) }
+		if !has_ext { path = strings.concatenate({path, exts[clamp(int(filter), 0, 2)]}, context.temp_allocator) }
+		request_file((^App)(userdata), .Export_Output, path)
+	}
+	sdl.ShowSaveFileDialog(callback, app, sdl.GL_GetCurrentWindow(), &filters[0], len(filters), nil)
 }
