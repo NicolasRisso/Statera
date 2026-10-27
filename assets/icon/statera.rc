@@ -1,0 +1,2 @@
+// Windows resources for statera.exe (icon). Built with: odin build ... -resource:assets/icon/statera.rc
+1 ICON "statera.ico"
