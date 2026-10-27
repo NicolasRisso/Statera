@@ -30,6 +30,8 @@ ROOT :: #directory + "/../.."
 @(test) test_means_basic :: proc(t: ^testing.T) { run_case(t, "means_basic") }
 @(test) test_ttest_basic :: proc(t: ^testing.T) { run_case(t, "ttest_basic") }
 @(test) test_oneway_basic :: proc(t: ^testing.T) { run_case(t, "oneway_basic") }
+@(test) test_corr_basic :: proc(t: ^testing.T) { run_case(t, "corr_basic") }
+@(test) test_reg_basic :: proc(t: ^testing.T) { run_case(t, "reg_basic") }
 
 Flat_Cell :: struct {
 	row, col, layer: string, // paths joined with " / "
