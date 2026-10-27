@@ -4,7 +4,7 @@
 
 Statera aims to **behave exactly like IBM SPSS Statistics**: same syntax, same file formats, same numbers. It's written from scratch in [Odin](https://odin-lang.org) for speed and uses a modern [Dear ImGui](https://github.com/ocornut/imgui) interface in place of the legacy Swing look.
 
-> **Status:** pre-alpha. `.sav` read/write; `GET`, `SAVE`, `COMPUTE`, `SELECT IF`, `FILTER`, `WEIGHT`, `SORT CASES`, `SPLIT FILE` and `TEMPORARY`; and `FREQUENCIES`, `DESCRIPTIVES` and `CROSSTABS` all work. Their output matches SPSS 25 cell for cell in the golden tests, weighted and split included.
+> **Status:** pre-alpha. `.sav` read/write; `GET`, `SAVE`, `COMPUTE`, `SELECT IF`, `FILTER`, `WEIGHT`, `SORT CASES`, `SPLIT FILE` and `TEMPORARY`; and `FREQUENCIES`, `DESCRIPTIVES`, `CROSSTABS`, `MEANS`, `T-TEST` and `ONEWAY` all work. Their output matches SPSS 25 cell for cell in the golden tests, weighted and split included.
 
 > Statera is an independent project. It is not affiliated with, endorsed by, or sponsored by IBM. "IBM" and "SPSS" are trademarks of IBM Corp., used here only to describe compatibility.
 

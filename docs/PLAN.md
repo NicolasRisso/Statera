@@ -81,7 +81,8 @@ The engine is a library. `app/`, `automation/` and the CLI are its clients, and 
 ### Phase 4: first procedures (most-used first)
 Done (golden-verified, weighted and split): `FREQUENCIES` (counts + all statistics), `DESCRIPTIVES` (all statistics), `CROSSTABS` (cells COUNT/EXPECTED/ROW/COLUMN/TOTAL; CHISQ incl. Fisher and continuity correction; PHI, Cramer's V, CC).
 CROSSTABS still to do: layers (`BY a BY b`), CORR/LAMBDA/GAMMA/etc., /MISSING, /FORMAT.
-Next: `MEANS`, `T-TEST`, `ONEWAY`, `CORRELATIONS`, `NONPAR CORR`, `REGRESSION`, `EXAMINE`, `NPAR TESTS`, `RELIABILITY`, `FACTOR`
+Also done: `MEANS` (nested BY, cells, ANOVA + eta), `T-TEST` (one-sample, independent with Levene + Welch, paired), `ONEWAY` (descriptives, 4-way Levene, ANOVA, Welch).
+Next: `CORRELATIONS`, linear `REGRESSION`, then `NONPAR CORR`, `EXAMINE`, `NPAR TESTS`, `RELIABILITY`, `FACTOR`.
 
 ### Phase 5: UI MVP
 - [x] App shell: SDL3 + OpenGL3 + ImGui docking, DPI-aware fonts (Inter, JetBrains Mono)
@@ -102,6 +103,10 @@ Next: `MEANS`, `T-TEST`, `ONEWAY`, `CORRELATIONS`, `NONPAR CORR`, `REGRESSION`, 
 - [ ] Optional in-app assistant: plain language → syntax (shown before running), "explain this table"
 
 ### Phase 7: first release
+Release slicing (agreed 2026-10-27):
+- **v0.1 "preview":** the release pipeline and installers below, plus File → Save, output export (HTML/CSV/XLSX) and copying a table. The goal is to put the installers on real machines early.
+- **v0.2:** Data View / Variable View editing, `DATA LIST`/`BEGIN DATA` and CSV import, `RECODE`/`IF`/`DO IF`, label and missing-value commands, `CORRELATIONS`, linear `REGRESSION`, and procedure dialogs with live syntax.
+
 - [ ] Release workflow on tag `v*`: builds on all three OSes, then attaches installers to a GitHub Release
   - Windows: Inno Setup installer (`Statera-<ver>-setup.exe`), file associations for `.sav`/`.sps`
   - macOS: `.app` bundle in a `.dmg` (universal or per-arch); signing/notarization once we have a cert
