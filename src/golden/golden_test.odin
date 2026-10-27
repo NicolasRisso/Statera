@@ -33,6 +33,39 @@ ROOT :: #directory + "/../.."
 @(test) test_corr_basic :: proc(t: ^testing.T) { run_case(t, "corr_basic") }
 @(test) test_reg_basic :: proc(t: ^testing.T) { run_case(t, "reg_basic") }
 
+// Runs a case and writes every export format to build/export/ for external validation.
+@(test)
+test_exports :: proc(t: ^testing.T) {
+	root, _ := filepath.abs(ROOT, context.temp_allocator)
+	root, _ = strings.replace_all(root, "\\", "/", context.temp_allocator)
+	src, _ := os.read_entire_file(strings.concatenate({root, "/tests/golden/xtab_stats/case.sps"}, context.temp_allocator), context.temp_allocator)
+	syntax, _ := strings.replace_all(string(src), "@ROOT@", root, context.temp_allocator)
+	s: engine.Session
+	defer engine.destroy(&s)
+	testing.expect_value(t, engine.run(&s, syntax), 0)
+
+	dir := strings.concatenate({root, "/build/export"}, context.temp_allocator)
+	_ = os.make_directory_all(dir)
+	html := output.to_html(s.items[:], "Statera output", context.temp_allocator)
+	csv := output.to_csv(s.items[:], context.temp_allocator)
+	xlsx := output.to_xlsx(s.items[:], context.temp_allocator)
+	testing.expect(t, strings.contains(html, "Chi-Square Tests"))
+	testing.expect(t, strings.contains(csv, "Pearson Chi-Square"))
+	testing.expect(t, len(xlsx) > 0 && xlsx[0] == 'P' && xlsx[1] == 'K')
+	_ = os.write_entire_file(strings.concatenate({dir, "/sample.html"}, context.temp_allocator), transmute([]byte)html)
+	_ = os.write_entire_file(strings.concatenate({dir, "/sample.csv"}, context.temp_allocator), transmute([]byte)csv)
+	_ = os.write_entire_file(strings.concatenate({dir, "/sample.xlsx"}, context.temp_allocator), xlsx)
+
+	for item in s.items {
+		if table, ok := item.(output.Table); ok && table.subtype == "Chi Square Tests" {
+			tbl := table
+			tsv := output.to_tsv(&tbl, context.temp_allocator)
+			testing.expect(t, strings.contains(tsv, "Pearson Chi-Square\t"))
+			break
+		}
+	}
+}
+
 Flat_Cell :: struct {
 	row, col, layer: string, // paths joined with " / "
 	text:            string,
