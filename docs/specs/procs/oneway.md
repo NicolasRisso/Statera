@@ -13,8 +13,8 @@ With **one** dependent, it goes in the layer of each table. With several, each t
 - **Test of Homogeneity of Variances:** the Levene statistic is the one-way ANOVA F computed on the absolute deviations z = |x − c_g|. Rows:
   - `Based on Mean`: c = the group mean.
   - `Based on Median`: c = the group median.
-  - `Based on Median and with adjusted df`: the same statistic, with df2 adjusted (formula to be confirmed, see open questions).
-  - `Based on trimmed mean`: c = the group's 5% trimmed mean.
+  - `Based on Median and with adjusted df`: the same statistic, with df2 = (Σu_i)² / Σ(u_i²/(n_i−1)), where u_i = Σ_j(z_ij − z̄_i)². This is the Satterthwaite approximation and is golden-verified.
+  - `Based on trimmed mean`: c = the group's 5% trimmed mean. Trim α·W of weight from each end of the sorted values, keeping fractional weights at the cut points, and average the remaining W(1 − 2α). Golden-verified.
 
   Columns: Levene Statistic (3), df1 (integer), df2 (integer, or 3 decimals when adjusted) and Sig. (3).
 - **ANOVA:** rows `Between Groups` (SS, df, Mean Square, F, Sig.), `Within Groups` (SS, df, MS) and `Total` (SS, df). All values use 3 decimals, and df is an integer.
@@ -23,6 +23,5 @@ With **one** dependent, it goes in the layer of each table. With several, each t
   - F* = [Σw_i(m_i − m′)²/(k−1)] / [1 + 2(k−2)Λ/(k²−1)], df1 = k−1, df2 = (k²−1)/(3Λ).
 
 ## Open questions
-- The adjusted-df formula. Working hypothesis: Satterthwaite, df2 = (Σu_i)² / Σ(u_i²/(n_i−1)), with u_i = Σ_j(z_ij − z̄_i)².
-- The trimmed-mean definition. Working hypothesis: the EXAMINE-style 5% trimmed mean with fractional end weights.
 - Post hoc tests, contrasts, /MISSING=LISTWISE, Brown–Forsythe.
+- Whether the Descriptives and Homogeneity tables also put a single dependent in the layer. ANOVA does; the others are assumed to.
