@@ -331,7 +331,7 @@ draw_syntax :: proc(app: ^App) {
 
 	if im.Button("▶ Run  (Ctrl+Enter)") { run_editor(app) }
 	im.SameLine()
-	text_colored(palette.dim, "GET SAVE COMPUTE SELECT IF FILTER WEIGHT SORT CASES SPLIT FILE TEMPORARY · FREQUENCIES DESCRIPTIVES CROSSTABS")
+	text_colored(palette.dim, "GET SAVE COMPUTE SELECT IF FILTER WEIGHT SORT CASES SPLIT FILE TEMPORARY · FREQUENCIES DESCRIPTIVES CROSSTABS MEANS T-TEST ONEWAY")
 
 	im.PushFontFloat(app.fonts.mono, 0)
 	im.PushStyleColorImVec4(.FrameBg, palette.bg)

@@ -39,6 +39,9 @@ DEFAULT_SYNTAX :: `* Statera syntax editor. Ctrl+Enter runs everything against t
 COMPUTE income_k = income / 1000.
 COMPUTE high_score = score >= 80.
 CROSSTABS /TABLES=group BY high_score /CELLS=COUNT ROW EXPECTED /STATISTICS=CHISQ PHI.
+MEANS TABLES=score income_k BY group /STATISTICS=ANOVA.
+T-TEST GROUPS=group(1 2) /VARIABLES=score age.
+ONEWAY score BY group /STATISTICS=DESCRIPTIVES HOMOGENEITY WELCH.
 SORT CASES BY group.
 SPLIT FILE LAYERED BY group.
 DESCRIPTIVES age score income_k /STATISTICS=MEAN STDDEV MIN MAX SKEWNESS.
