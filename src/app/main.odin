@@ -12,6 +12,8 @@ import gl "vendor:OpenGL"
 import sdl "vendor:sdl3"
 import stbi "vendor:stb/image"
 
+VERSION :: #config(STATERA_VERSION, "dev")
+
 GL_MAJOR :: 3
 GL_MINOR :: 3
 

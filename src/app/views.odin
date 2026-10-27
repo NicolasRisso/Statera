@@ -96,6 +96,8 @@ draw_menu_bar :: proc(app: ^App) {
 	}
 	if im.BeginMenu("Help") {
 		if im.MenuItem("Command palette", "Ctrl+K") { app.palette_open = true }
+		im.Separator()
+		im.MenuItem(cstr(fmt.tprintf("Statera %s · Apache-2.0", VERSION)), nil, false, false)
 		im.EndMenu()
 	}
 
