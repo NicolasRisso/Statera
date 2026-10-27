@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Statera
+GenericName=Statistics
+Comment=Open-source, SPSS-compatible statistics
+Exec=statera %f
+Icon=statera
+Terminal=false
+Categories=Science;Math;Education;
+MimeType=application/x-spss-sav;
