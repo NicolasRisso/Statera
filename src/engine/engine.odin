@@ -149,9 +149,15 @@ run_command :: proc(s: ^Session, toks: []syntax.Token) -> bool {
 		report(s, .Error, "", fmt.tprintf("Line %d: a command must start with a command name, not '%s'.", head.line, head.text))
 		return false
 	}
+	// Hyphenated command names lex as several tokens: T-TEST is `T` `-` `TEST`.
+	word, start := head.text, 1
+	if len(toks) >= 3 && toks[1].kind == .Minus && toks[2].kind == .Identifier &&
+	   toks[1].col == head.col + len(head.text) && toks[2].col == toks[1].col + 1 {
+		word, start = fmt.tprintf("%s-%s", head.text, toks[2].text), 3
+	}
 	for c in COMMANDS {
-		if !keyword_matches(head.text, c.name) { continue }
-		cmd := Cmd{name = c.name, toks = toks, pos = 1, s = s}
+		if !keyword_matches(word, c.name) { continue }
+		cmd := Cmd{name = c.name, toks = toks, pos = start, s = s}
 		if c.second != "" {
 			if !accept_keyword(&cmd, c.second) { continue }
 			cmd.name = fmt.tprintf("%s %s", c.name, c.second)

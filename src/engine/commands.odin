@@ -27,6 +27,9 @@ COMMANDS := [?]Command {
 	{name = "FILTER", run = cmd_filter},
 	{name = "FREQUENCIES", run = cmd_frequencies, procedure = true},
 	{name = "GET", run = cmd_get},
+	{name = "MEANS", run = cmd_means, procedure = true},
+	{name = "ONEWAY", run = cmd_oneway, procedure = true},
+	{name = "T-TEST", run = cmd_ttest, procedure = true},
 	{name = "SAVE", run = cmd_save, procedure = true},
 	{name = "SELECT", second = "IF", run = cmd_select_if},
 	{name = "SORT", second = "CASES", run = cmd_sort_cases},
@@ -375,6 +378,177 @@ cmd_crosstabs :: proc(s: ^Session, c: ^Cmd) -> bool {
 	if len(pairs) == 0 { return fail(c, "no table list (TABLES = rows BY columns)") }
 	ctx := make_context(c)
 	procs.crosstabs(&ctx, pairs[:], opts, &s.items)
+	return true
+}
+
+@(private)
+cmd_means :: proc(s: ^Session, c: ^Cmd) -> bool {
+	need_data(c) or_return
+	tables := make([dynamic]procs.Means_Table, context.temp_allocator)
+	cells := make([dynamic]procs.Means_Cell, context.temp_allocator)
+	anova := false
+	first := true
+	for !at_end(c) {
+		slash := accept_kind(c, .Slash)
+		switch {
+		case accept_keyword(c, "TABLES") || (first && !slash):
+			accept_kind(c, .Equals)
+			deps := parse_varlist(c) or_return
+			by := make([dynamic]int, context.temp_allocator)
+			for accept_keyword(c, "BY") {
+				level := parse_varlist(c) or_return
+				if len(level) != 1 { return fail(c, "only one variable per BY level is supported so far") }
+				append(&by, level[0])
+			}
+			if len(by) == 0 { return fail(c, "expected BY and a grouping variable") }
+			append(&tables, procs.Means_Table{deps[:], by[:]})
+		case accept_keyword(c, "CELLS"):
+			accept_kind(c, .Equals)
+			names := [?]struct {
+				word: string,
+				cell: procs.Means_Cell,
+			}{
+				{"MEAN", .Mean}, {"COUNT", .Count}, {"STDDEV", .Stddev}, {"MIN", .Min}, {"MAX", .Max},
+				{"SUM", .Sum}, {"VARIANCE", .Variance}, {"SEMEAN", .Semean}, {"RANGE", .Range},
+			}
+			for !at_subcommand_end(c) {
+				t, _ := peek(c)
+				found := false
+				for n in names {
+					if accept_keyword(c, n.word) {
+						append(&cells, n.cell)
+						found = true
+						break
+					}
+				}
+				if !found { return fail(c, "unknown or unsupported cell statistic %s", t.text) }
+			}
+		case accept_keyword(c, "STATISTICS"):
+			accept_kind(c, .Equals)
+			for !at_subcommand_end(c) {
+				t, _ := peek(c)
+				if !accept_keyword(c, "ANOVA") { return fail(c, "unsupported statistic %s", t.text) }
+				anova = true
+			}
+		case:
+			t, _ := peek(c)
+			return fail(c, "subcommand %s is not implemented yet", t.text)
+		}
+		first = false
+	}
+	if len(tables) == 0 { return fail(c, "no table list") }
+	ctx := make_context(c)
+	procs.means(&ctx, tables[:], cells[:], anova, &s.items)
+	return true
+}
+
+@(private)
+cmd_ttest :: proc(s: ^Session, c: ^Cmd) -> bool {
+	need_data(c) or_return
+	test_value: Maybe(f64)
+	factor := -1
+	levels: [2]f64
+	vars: [dynamic]int
+	pairs := make([dynamic][2]int, context.temp_allocator)
+	for !at_end(c) {
+		accept_kind(c, .Slash)
+		switch {
+		case accept_keyword(c, "TESTVAL"):
+			accept_kind(c, .Equals)
+			negative := accept_kind(c, .Minus)
+			t, ok := peek(c)
+			if !ok || t.kind != .Number { return fail(c, "expected a test value") }
+			c.pos += 1
+			test_value = -t.number if negative else t.number
+		case accept_keyword(c, "GROUPS"):
+			accept_kind(c, .Equals)
+			g := parse_varlist(c) or_return
+			factor = g[0]
+			if !accept_kind(c, .L_Paren) { return fail(c, "expected (value value) after the grouping variable") }
+			for k in 0 ..< 2 {
+				t, ok := peek(c)
+				if !ok || t.kind != .Number { return fail(c, "expected two group values") }
+				levels[k] = t.number
+				c.pos += 1
+				accept_kind(c, .Comma)
+			}
+			if !accept_kind(c, .R_Paren) { return fail(c, "expected )") }
+		case accept_keyword(c, "VARIABLES"):
+			accept_kind(c, .Equals)
+			vars = parse_varlist(c) or_return
+		case accept_keyword(c, "PAIRS"):
+			accept_kind(c, .Equals)
+			left := parse_varlist(c) or_return
+			right: [dynamic]int
+			with := accept_keyword(c, "WITH")
+			if with { right = parse_varlist(c) or_return }
+			paired := false
+			if accept_kind(c, .L_Paren) {
+				if !accept_keyword(c, "PAIRED") || !accept_kind(c, .R_Paren) { return fail(c, "expected (PAIRED)") }
+				paired = true
+			}
+			switch {
+			case with && paired:
+				if len(left) != len(right) { return fail(c, "(PAIRED) needs lists of equal length") }
+				for a, i in left { append(&pairs, [2]int{a, right[i]}) }
+			case with:
+				for a in left { for b in right { append(&pairs, [2]int{a, b}) } }
+			case:
+				for i in 0 ..< len(left) { for j in i + 1 ..< len(left) { append(&pairs, [2]int{left[i], left[j]}) } }
+			}
+		case accept_keyword(c, "MISSING"), accept_keyword(c, "CRITERIA"):
+			warn(c, "this subcommand is not implemented yet and was ignored")
+			for !at_subcommand_end(c) { c.pos += 1 }
+		case:
+			t, _ := peek(c)
+			return fail(c, "unexpected %s", t.text)
+		}
+	}
+	ctx := make_context(c)
+	switch {
+	case len(pairs) > 0:
+		procs.ttest_paired(&ctx, pairs[:], &s.items)
+	case factor >= 0:
+		if len(vars) == 0 { return fail(c, "GROUPS needs /VARIABLES") }
+		procs.ttest_groups(&ctx, factor, levels[0], levels[1], vars[:], &s.items)
+	case test_value != nil:
+		if len(vars) == 0 { return fail(c, "TESTVAL needs /VARIABLES") }
+		procs.ttest_one_sample(&ctx, vars[:], test_value.?, &s.items)
+	case:
+		return fail(c, "specify TESTVAL, GROUPS or PAIRS")
+	}
+	return true
+}
+
+@(private)
+cmd_oneway :: proc(s: ^Session, c: ^Cmd) -> bool {
+	need_data(c) or_return
+	if accept_keyword(c, "VARIABLES") { accept_kind(c, .Equals) }
+	deps := parse_varlist(c) or_return
+	if !accept_keyword(c, "BY") { return fail(c, "expected BY and a factor variable") }
+	factor := parse_varlist(c) or_return
+	if len(factor) != 1 { return fail(c, "ONEWAY takes one factor variable") }
+	opts: procs.Oneway_Options
+	for accept_kind(c, .Slash) {
+		if !accept_keyword(c, "STATISTICS") {
+			t, _ := peek(c)
+			return fail(c, "subcommand %s is not implemented yet", t.text)
+		}
+		accept_kind(c, .Equals)
+		for !at_subcommand_end(c) {
+			switch {
+			case accept_keyword(c, "DESCRIPTIVES"): opts.descriptives = true
+			case accept_keyword(c, "HOMOGENEITY"):  opts.homogeneity = true
+			case accept_keyword(c, "WELCH"):        opts.welch = true
+			case accept_keyword(c, "ALL"):          opts = {true, true, true}
+			case:
+				t, _ := peek(c)
+				return fail(c, "unsupported statistic %s", t.text)
+			}
+		}
+	}
+	ctx := make_context(c)
+	procs.oneway(&ctx, deps[:], factor[0], opts, &s.items)
 	return true
 }
 
