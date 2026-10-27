@@ -69,6 +69,10 @@ draw_menu_bar :: proc(app: ^App) {
 	im.Dummy({8, 0})
 	if im.BeginMenu("File") {
 		if im.MenuItem("Open data file…", "Ctrl+O") { show_open_dialog(app) }
+		if im.MenuItem("Save data", "Ctrl+S") { save_or_ask(app) }
+		if im.MenuItem("Save data as…", "Ctrl+Shift+S") { show_save_dialog(app) }
+		im.Separator()
+		if im.MenuItem("Export output…", "Ctrl+E") { show_export_dialog(app) }
 		if im.MenuItem("Load demo dataset") { load_demo_dataset(app) }
 		im.Separator()
 		if im.MenuItem("Quit", "Ctrl+Q") { app.running = false }
@@ -365,17 +369,27 @@ draw_output :: proc(app: ^App) {
 	im.SameLine()
 
 	if im.BeginChild("##items") {
+		// Items scrolled out of view are replaced by a spacer of their last measured height.
+		for len(app.item_heights) < len(items) { append(&app.item_heights, 0) }
+		if len(app.item_heights) > len(items) { resize(&app.item_heights, len(items)) }
 		for &item, i in items {
-			im.PushIDInt(i32(i))
-			switch &v in item {
-			case output.Table: draw_pivot_table(&v)
-			case output.Text:  draw_output_text(&v)
-			}
-			im.PopID()
 			if app.output_focus == i {
 				im.SetScrollHereY(0)
 				app.output_focus = -1
 			}
+			h := app.item_heights[i]
+			if h > 0 && !im.IsRectVisibleBySize({1, h}) {
+				im.Dummy({1, h})
+				continue
+			}
+			start := im.GetCursorPosY()
+			im.PushIDInt(i32(i))
+			switch &v in item {
+			case output.Table: draw_pivot_table(app, i, &v)
+			case output.Text:  draw_output_text(&v)
+			}
+			im.PopID()
+			app.item_heights[i] = im.GetCursorPosY() - start
 		}
 	}
 	im.EndChild()
@@ -414,113 +428,73 @@ draw_output_text :: proc(t: ^output.Text) {
 	im.Dummy({0, 6})
 }
 
-// Renders a flat-cell table as a pivot grid: unique row/column paths become header bands,
-// repeated outer labels are suppressed so groups read like merged cells.
+// Renders a table from its cached layout: repeated outer labels are suppressed so groups
+// read like merged cells; numbers are right-aligned like SPSS.
 @(private = "file")
-draw_pivot_table :: proc(t: ^output.Table) {
-	rows := make([dynamic][]string, context.temp_allocator)
-	cols := make([dynamic][]string, context.temp_allocator)
-	row_index := make(map[string]int, allocator = context.temp_allocator)
-	col_index := make(map[string]int, allocator = context.temp_allocator)
-	key :: proc(p: []string) -> string { return strings.join(p, "\x1f", context.temp_allocator) }
-	row_depth, col_depth := 1, 1
-	for c in t.cells {
-		if key(c.row) not_in row_index {
-			row_index[key(c.row)] = len(rows)
-			append(&rows, c.row)
-			row_depth = max(row_depth, len(c.row))
-		}
-		if key(c.col) not_in col_index {
-			col_index[key(c.col)] = len(cols)
-			append(&cols, c.col)
-			col_depth = max(col_depth, len(c.col))
-		}
-	}
-	grid := make([]^output.Cell, len(rows) * len(cols), context.temp_allocator)
-	notes := make([dynamic]string, context.temp_allocator)
-	for &c in t.cells {
-		grid[row_index[key(c.row)] * len(cols) + col_index[key(c.col)]] = &c
-	}
+draw_pivot_table :: proc(app: ^App, index: int, t: ^output.Table) {
+	l := cached_layout(app, index, t)
 
-	text_colored(palette.text, t.title)
-	for c in t.captions { text_colored(palette.dim, c) }
+	text_colored(palette.text, l.title)
+	im.SameLine(0, 12)
+	if im.SmallButton("Copy") {
+		im.SetClipboardText(cstr(output.to_tsv(t, context.temp_allocator)))
+	}
+	if im.IsItemHovered() { im.SetTooltip("Copy as tab-separated text (pastes into spreadsheets)") }
+	for c in l.captions { text_colored(palette.dim, c) }
 	// Single-category layers (e.g. CROSSTABS "Count") are shown as a subtitle.
-	if len(t.cells) > 0 && len(t.cells[0].layer) > 0 {
-		text_colored(palette.dim, strings.join(t.cells[0].layer, " / ", context.temp_allocator))
-	}
-	// Footnotes on labels share the cell footnote lettering.
-	note_mark :: proc(notes: ^[dynamic]string, note: string) -> rune {
-		for existing, k in notes {
-			if existing == note { return 'a' + rune(k) }
-		}
-		append(notes, note)
-		return 'a' + rune(len(notes) - 1)
-	}
-	n_cols := row_depth + len(cols)
+	if len(l.layer) > 0 { text_colored(palette.dim, strings.join(l.layer, " / ", context.temp_allocator)) }
+
+	n_cols := l.row_depth + len(l.cols)
 	// ScrollX keeps columns at their natural width (scrolling when the pane is narrow); it
 	// needs an explicit height, so size the table to its rows.
 	flags := im.TableFlags_BordersOuter | im.TableFlags_BordersInnerH | im.TableFlags_SizingFixedFit |
 		im.TableFlags_RowBg | im.TableFlags_ScrollX
 	row_h := im.GetTextLineHeight() + 2 * im.GetStyle().CellPadding.y
-	height := f32(col_depth + len(rows)) * row_h + im.GetStyle().ScrollbarSize + 4
+	height := f32(l.col_depth + len(l.rows)) * row_h + im.GetStyle().ScrollbarSize + 4
 	if n_cols <= 512 && im.BeginTable("##pivot", i32(n_cols), flags, {0, height}) {
 		defer im.EndTable()
-		for level in 0 ..< col_depth {
+		for level in 0 ..< l.col_depth {
 			// A plain row (not .Headers) so header text counts toward column auto-fit.
 			im.TableNextRow()
 			im.TableSetBgColor(.RowBg0, im.GetColorU32ImVec4(palette.header))
-			for _ in 0 ..< row_depth { im.TableNextColumn() }
-			for c, ci in cols {
+			for _ in 0 ..< l.row_depth { im.TableNextColumn() }
+			for c, ci in l.cols {
 				im.TableNextColumn()
-				if level >= len(c) { continue }
-				// Show a band label only where it starts.
-				if ci > 0 && level < len(cols[ci - 1]) && slice_prefix_equal(cols[ci - 1], c, level + 1) { continue }
-				text_colored(palette.dim, c[level])
+				if level >= len(c) || (ci > 0 && output.same_band(l.cols[ci - 1], c, level)) { continue }
+				text_colored(palette.dim, fmt.tprintf("%s%s", c[level], l.col_marks[c[level]]))
 			}
 		}
-		for r, ri in rows {
-			im.TableNextRow()
-			for level in 0 ..< row_depth {
-				im.TableNextColumn()
-				if level >= len(r) { continue }
-				if ri > 0 && level < len(rows[ri - 1]) && slice_prefix_equal(rows[ri - 1], r, level + 1) { continue }
-				label := r[level]
-				for n in t.label_notes {
-					if n.label == label { label = fmt.tprintf("%s%c", label, note_mark(&notes, n.text)) }
+		clipper: im.ListClipper
+		im.ListClipper_Begin(&clipper, i32(len(l.rows)))
+		defer im.ListClipper_End(&clipper)
+		for im.ListClipper_Step(&clipper) {
+			for ri in int(clipper.DisplayStart) ..< int(clipper.DisplayEnd) {
+				r := l.rows[ri]
+				im.TableNextRow()
+				for level in 0 ..< l.row_depth {
+					im.TableNextColumn()
+					if level >= len(r) || (ri > 0 && output.same_band(l.rows[ri - 1], r, level)) { continue }
+					im.TextUnformatted(cstr(fmt.tprintf("%s%s", r[level], l.row_marks[r[level]])))
 				}
-				im.TextUnformatted(cstr(label))
-			}
-			for _, ci in cols {
-				im.TableNextColumn()
-				cell := grid[ri * len(cols) + ci]
-				if cell == nil { continue }
-				text := cell.text
-				for note in cell.footnotes {
-					text = fmt.tprintf("%s%c", text, note_mark(&notes, note))
+				for _, ci in l.cols {
+					im.TableNextColumn()
+					slot := ri * len(l.cols) + ci
+					cell := l.cells[slot]
+					if cell == nil { continue }
+					text := cstr(l.texts[slot])
+					w := im.CalcTextSize(text).x
+					avail := im.GetContentRegionAvail().x
+					if cell.has_value && avail > w { im.SetCursorPosX(im.GetCursorPosX() + avail - w) }
+					im.TextUnformatted(text)
 				}
-				// Right-align numbers like SPSS.
-				w := im.CalcTextSize(cstr(text)).x
-				avail := im.GetContentRegionAvail().x
-				if cell.has_value && avail > w { im.SetCursorPosX(im.GetCursorPosX() + avail - w) }
-				im.TextUnformatted(cstr(text))
 			}
 		}
 	}
-	for note, k in notes {
+	for note, k in l.notes {
 		text_colored(palette.dim, fmt.tprintf("%c. %s", 'a' + rune(k), note))
 	}
 	im.Dummy({0, 12})
 }
-
-@(private = "file")
-slice_prefix_equal :: proc(a, b: []string, n: int) -> bool {
-	if len(a) < n || len(b) < n { return false }
-	for i in 0 ..< n {
-		if a[i] != b[i] { return false }
-	}
-	return true
-}
-
 Palette_Command :: struct {
 	name:     string,
 	shortcut: string,
@@ -529,6 +503,9 @@ Palette_Command :: struct {
 
 PALETTE_COMMANDS := [?]Palette_Command {
 	{"Open data file…", "Ctrl+O", proc(app: ^App) { show_open_dialog(app) }},
+	{"Save data", "Ctrl+S", proc(app: ^App) { save_or_ask(app) }},
+	{"Save data as…", "Ctrl+Shift+S", proc(app: ^App) { show_save_dialog(app) }},
+	{"Export output (HTML / XLSX / CSV)…", "Ctrl+E", proc(app: ^App) { show_export_dialog(app) }},
 	{"Load demo dataset", "", proc(app: ^App) { load_demo_dataset(app) }},
 	{"Run all syntax", "Ctrl+Enter", proc(app: ^App) { run_editor(app) }},
 	{"Toggle value labels", "Ctrl+L", proc(app: ^App) { app.show_labels = !app.show_labels }},

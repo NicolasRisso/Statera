@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:math"
 import "core:math/rand"
 import "core:mem/virtual"
+import "core:os"
 import "core:strings"
 import "core:sync"
 
@@ -24,6 +25,9 @@ App :: struct {
 
 	syntax_buf:     [64 * 1024]u8,
 	output_focus:   int, // item to scroll to, -1 for none
+	layouts:        [dynamic]Cached_Layout, // per output item, rebuilt only when it changes
+	item_heights:   [dynamic]f32,           // last drawn height per output item (for clipping)
+	layout_arena:   virtual.Arena,
 
 	palette_open:   bool,
 	palette_query:  [128]u8,
@@ -32,7 +36,9 @@ App :: struct {
 	show_demo:      bool,
 
 	open_lock:      sync.Mutex,
-	pending_open:   string, // set by the file dialog thread
+	pending_open:   string,      // set by a file dialog thread
+	pending_action: File_Action,
+	data_path:      string,      // where Ctrl+S saves; empty until opened or saved
 }
 
 DEFAULT_SYNTAX :: `* Statera syntax editor. Ctrl+Enter runs everything against the active dataset.
@@ -63,6 +69,30 @@ data :: proc(app: ^App) -> ^sav.File {
 	return &app.session.data
 }
 
+Cached_Layout :: struct {
+	cells:  rawptr, // identity of the table's cell storage
+	count:  int,
+	layout: output.Layout,
+}
+
+// Pivot layouts are expensive to rebuild every frame; output items only ever get appended
+// (or all cleared), so cache by index and validate against the table's cell storage.
+cached_layout :: proc(app: ^App, index: int, t: ^output.Table) -> ^output.Layout {
+	if len(app.layouts) > len(app.session.items) {
+		virtual.arena_destroy(&app.layout_arena)
+		app.layout_arena = {}
+		app.layouts = {}
+	}
+	alloc := virtual.arena_allocator(&app.layout_arena)
+	if app.layouts == nil { app.layouts = make([dynamic]Cached_Layout, alloc) }
+	for len(app.layouts) <= index { append(&app.layouts, Cached_Layout{}) }
+	c := &app.layouts[index]
+	if c.cells != raw_data(t.cells) || c.count != len(t.cells) {
+		c^ = {cells = raw_data(t.cells), count = len(t.cells), layout = output.layout(t, alloc)}
+	}
+	return &c.layout
+}
+
 log_text :: proc(app: ^App, kind: output.Text_Kind, text: string) {
 	context.allocator = engine.out_allocator(&app.session)
 	engine.report(&app.session, kind, "", text)
@@ -86,7 +116,10 @@ open_dataset :: proc(app: ^App, path: string) {
 	quoted, _ := strings.replace_all(path, "'", "''", context.temp_allocator)
 	syntax := fmt.tprintf("GET FILE='%s'.", quoted)
 	log_text(app, .Note, syntax)
-	if run_syntax(app, syntax) == 0 { add_dataset_summary(app, path) }
+	if run_syntax(app, syntax) == 0 {
+		set_data_path(app, path)
+		add_dataset_summary(app, path)
+	}
 }
 
 add_dataset_summary :: proc(app: ^App, source: string) {
@@ -108,17 +141,57 @@ add_dataset_summary :: proc(app: ^App, source: string) {
 	app.output_focus = len(app.session.items) - 1
 }
 
-request_open :: proc(app: ^App, path: string) {
+File_Action :: enum u8 {
+	Open,
+	Save_Data,
+	Export_Output,
+}
+
+// Called from file-dialog threads; the main loop picks the request up with take_pending.
+request_file :: proc(app: ^App, action: File_Action, path: string) {
 	sync.mutex_lock(&app.open_lock)
 	defer sync.mutex_unlock(&app.open_lock)
+	app.pending_action = action
 	app.pending_open = strings.clone(path, context.allocator)
 }
 
-take_pending_open :: proc(app: ^App) -> (path: string, ok: bool) {
+take_pending :: proc(app: ^App) -> (action: File_Action, path: string, ok: bool) {
 	sync.mutex_lock(&app.open_lock)
 	defer sync.mutex_unlock(&app.open_lock)
-	path, app.pending_open = app.pending_open, ""
-	return path, path != ""
+	action, path, app.pending_open = app.pending_action, app.pending_open, ""
+	return action, path, path != ""
+}
+
+save_dataset :: proc(app: ^App, path: string) {
+	quoted, _ := strings.replace_all(path, "'", "''", context.temp_allocator)
+	syntax := fmt.tprintf("SAVE OUTFILE='%s'.", quoted)
+	log_text(app, .Note, syntax)
+	if run_syntax(app, syntax) == 0 {
+		set_data_path(app, path)
+		log_text(app, .Note, fmt.tprintf("Saved %s", path))
+	}
+}
+
+// Writes the output document; the format follows the file extension (HTML by default).
+export_output :: proc(app: ^App, path: string) {
+	items := app.session.items[:]
+	lower := strings.to_lower(path, context.temp_allocator)
+	data: []byte
+	switch {
+	case strings.has_suffix(lower, ".csv"):  data = transmute([]byte)output.to_csv(items, context.temp_allocator)
+	case strings.has_suffix(lower, ".xlsx"): data = output.to_xlsx(items, context.temp_allocator)
+	case:                                    data = transmute([]byte)output.to_html(items, "Statera output", context.temp_allocator)
+	}
+	if os.write_entire_file(path, data) != nil {
+		log_text(app, .Error, fmt.tprintf("Could not write %s", path))
+		return
+	}
+	log_text(app, .Note, fmt.tprintf("Output exported to %s", path))
+}
+
+set_data_path :: proc(app: ^App, path: string) {
+	delete(app.data_path)
+	app.data_path = strings.clone(path)
 }
 
 // A synthetic survey large enough to exercise the virtualized grid.
