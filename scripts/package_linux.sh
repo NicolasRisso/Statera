@@ -40,7 +40,7 @@ Priority: optional
 Architecture: amd64
 Depends: libc6, libgl1, libx11-6
 Maintainer: Risso Productions
-Homepage: https://github.com/NicolasRisso/OpenSPSS
+Homepage: https://github.com/NicolasRisso/Statera
 Description: Open-source, SPSS-compatible statistics
  Statera reads and writes .sav files and runs SPSS syntax with output that
  matches SPSS Statistics, in a modern GPU-rendered interface.
