@@ -107,11 +107,13 @@ Release slicing (agreed 2026-10-27):
 - **v0.1 "preview":** the release pipeline and installers below, plus File → Save, output export (HTML/CSV/XLSX) and copying a table. The goal is to put the installers on real machines early.
 - **v0.2:** Data View / Variable View editing, `DATA LIST`/`BEGIN DATA` and CSV import, `RECODE`/`IF`/`DO IF`, label and missing-value commands, `CORRELATIONS`, linear `REGRESSION`, and procedure dialogs with live syntax.
 
-- [ ] Release workflow on tag `v*`: builds on all three OSes, then attaches installers to a GitHub Release
+- [x] v0.1 app work: File Save/Save As, export to HTML/XLSX/CSV, Copy table, cached and clipped output rendering, app icon
+- [x] Release workflow on tag `v*` (written; first CI run pending): builds on all three OSes, then attaches installers to a GitHub Release
   - Windows: Inno Setup installer (`Statera-<ver>-setup.exe`), file associations for `.sav`/`.sps`
   - macOS: `.app` bundle in a `.dmg` (universal or per-arch); signing/notarization once we have a cert
   - Linux: AppImage + `.deb`, desktop entry and MIME types
-- [ ] Release notes page listing every build and checksums (SHA-256)
+- [x] Release notes listing every build, install notes and SHA-256 checksums (`installer/release-notes.md`)
+- [ ] Code signing (Windows Authenticode, Apple notarization) once certificates exist
 
 ### Phase 8: breadth
 GLM/UNIANOVA, MANOVA, MIXED, LOGISTIC REGRESSION, NOMREG, PLUM, GENLIN, COXREG, KM, SURVIVAL, CLUSTER, QUICK CLUSTER, TWOSTEP, DISCRIMINANT, CTABLES, AGGREGATE extras, time series, Bayesian, charts (GGRAPH/GPL), and the rest of the 307 commands, prioritized by user demand.

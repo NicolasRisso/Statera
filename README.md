@@ -152,17 +152,35 @@ Reverse engineering for interoperability is lawful in many jurisdictions but res
 
 The theme follows your OS by default. Switch it with the System / Light / Dark control in the menu bar or with `Ctrl+Shift+T`.
 
+## Install
+
+Download the installer for your system from the [Releases](../../releases) page:
+- **Windows:** `…-windows-x64-setup.exe`, or the portable `.zip`.
+- **macOS (Apple Silicon):** `…-macos-arm64.dmg`.
+- **Linux:** `…-linux-x86_64.AppImage`, or the `.deb` for Debian/Ubuntu.
+
+Preview builds are unsigned, and the release notes explain the first-launch steps.
+
 ## Building
 
-Requirements: the [Odin compiler](https://odin-lang.org/docs/install/) (dev-2026-09 or newer), Python 3, and on Windows Visual Studio 2022 C++ tools.
+Requirements: the [Odin compiler](https://odin-lang.org/docs/install/) (dev-2026-09 or newer), Python 3, and a C/C++ compiler (Visual Studio 2022 on Windows, clang on Linux/macOS).
 
 ```powershell
+# Windows
 scripts/setup_imgui.ps1     # once: fetch and build Dear ImGui bindings into vendor/imgui
-scripts/build.ps1           # build/statera.exe (add -Release for an optimized, console-less build)
+scripts/build.ps1           # build/statera.exe (-Release for an optimized, console-less build)
 scripts/gate.ps1            # checks + tests; run before every push
 ```
 
-`build/statera.exe [file.sav] [--light|--dark]` opens a data file. You can also drag a `.sav` onto the window. Linux and macOS build scripts will follow with the release pipeline.
+```bash
+# Linux / macOS
+sh scripts/build_sdl3.sh "$HOME/sdl3"            # once: SDL3 shared library
+sh scripts/setup_imgui.sh                        # once: Dear ImGui bindings
+SDL_PREFIX="$HOME/sdl3" sh scripts/build.sh      # build/statera
+sh scripts/gate.sh
+```
+
+`statera [file.sav] [--light|--dark]` opens a data file, and you can also drag a `.sav` onto the window. Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed. Run that workflow manually for a dry run that builds the artifacts without publishing.
 
 ## Contributing
 
